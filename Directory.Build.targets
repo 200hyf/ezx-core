@@ -1,0 +1,38 @@
+<Project>
+  <!--
+    ezx-core 自动适配（可选）
+    =======================================================================
+    把本文件和 easyx_core.h / easyx_core.cpp 一起放到项目根目录，
+    MSBuild 会自动导入它，不需要再手动改项目属性：
+      - 运行库强制 /MT（EasyX 的 lib 是 MT_StaticRelease）
+      - 去掉 Debug 的 _DEBUG（否则 STL 进入调试模式，仍然要求 MTd）
+      - 加 /utf-8（中文字面量按 UTF-8 写进 exe）
+      - 自动加 EasyX 头文件/库目录
+    如果你的项目已经自己设置好了，删掉本文件即可，不会影响源文件。
+    注意：它会覆盖 Link 的“附加库目录”。如果你还有别的第三方 lib 目录，
+    请删掉本文件，改为在项目属性里手动合并。
+  -->
+  <Target Name="EzxCoreAdaptCompile" BeforeTargets="ClCompile">
+    <ItemGroup>
+      <ClCompile Update="@(ClCompile)">
+        <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+        <AdditionalOptions>/utf-8 %(ClCompile.AdditionalOptions)</AdditionalOptions>
+        <UndefinePreprocessorDefinitions>_DEBUG;%(ClCompile.UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
+        <PreprocessorDefinitions>NDEBUG;%(ClCompile.PreprocessorDefinitions)</PreprocessorDefinitions>
+        <AdditionalIncludeDirectories>$(VCInstallDir)Auxiliary\VS\include;%(ClCompile.AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+        <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+        <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+        <SupportJustMyCode>false</SupportJustMyCode>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="EzxCoreAdaptLink" BeforeTargets="Link">
+    <ItemGroup>
+      <Link Update="@(Link)">
+        <AdditionalLibraryDirectories Condition="'$(Platform)' == 'x64'">$(VCInstallDir)Auxiliary\VS\lib\x64</AdditionalLibraryDirectories>
+        <AdditionalLibraryDirectories Condition="'$(Platform)' == 'Win32'">$(VCInstallDir)Auxiliary\VS\lib\x86</AdditionalLibraryDirectories>
+      </Link>
+    </ItemGroup>
+  </Target>
+</Project>

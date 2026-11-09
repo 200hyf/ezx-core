@@ -1,0 +1,24 @@
+# 编译产物
+.build/
+x64/
+Debug/
+Release/
+.vs/
+*.obj
+*.pdb
+*.exe
+*.ilk
+*.idb
+*.tlog
+
+# 用户/IDE 文件
+*.user
+*.suo
+
+# 打包产物
+*.zip
+*.sha256
+
+# 临时文件
+*.log
+*.tmp
