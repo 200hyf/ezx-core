@@ -2035,6 +2035,10 @@ function init() {
     if (w) select(w.uid);
   }
   if (params.has('preview')) enterPreview();
+  if (params.has('previewcode')) {
+    const b = project.widgets.find(w => w.type === 'button' && w.target);
+    if (b) b.handler = 'saveSettings();';
+  }
   if (params.has('previewclick')) {
     const b = project.widgets.find(w => w.type === 'button' && w.target);
     if (b) previewClick(b);
