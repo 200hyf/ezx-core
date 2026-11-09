@@ -167,18 +167,24 @@ namespace ui {
     // 菜单项：回到主页
     static void onMenu_SETTINGS_MENU_MAIN_Item1()
     {
+        // 页面跳转（编辑器里配置的）
+        goPage(UI_PAGE_MAIN);
+        
+        // 其他逻辑写在这里：
         // TODO: 菜单项“回到主页”的逻辑
     }
 
     // 菜单项：音量
     static void onMenu_SETTINGS_MENU_MAIN_Item2()
     {
+        // 这个菜单项没有配置页面跳转，逻辑写在这里：
         // TODO: 菜单项“音量”的逻辑
     }
 
     // 菜单项：关于
     static void onMenu_SETTINGS_MENU_MAIN_Item3()
     {
+        // 这个菜单项没有配置页面跳转，逻辑写在这里：
         // TODO: 菜单项“关于”的逻辑
     }
 
@@ -210,30 +216,34 @@ namespace ui {
         const bool inArea = vp.inside(in.pos().x, in.pos().y);
         const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };
 
-        // 伸缩菜单：点标题展开/收起，展开后点菜单项
-        if (in.clicked() && inArea)
+        // 伸缩菜单：展开/收起、菜单项点击
+        if (inArea)
         {
-            if (pctRect(vp, 0.0469, 0.0833, 0.1719, 0.0722).contains(m))
+            if (in.clicked() && pctRect(vp, 0.0469, 0.0833, 0.1719, 0.0722).contains(m))
             {
                 g_p1_menu_1_open = !g_p1_menu_1_open;
                 onMenu_SETTINGS_MENU_MAIN_Toggle();
                 return;
             }
+            if (in.clicked() && !pctRect(vp, 0.0469, 0.0833, 0.1719, 0.2556).contains(m)) g_p1_menu_1_open = false;
             if (g_p1_menu_1_open)
             {
-                if (pctRect(vp, 0.0469, 0.1556, 0.1719, 0.0611).contains(m))
+                if (in.clicked() && pctRect(vp, 0.0469, 0.1556, 0.1719, 0.0611).contains(m))
                 {
                     onMenu_SETTINGS_MENU_MAIN_Item1();
+                    g_p1_menu_1_open = false;
                     return;
                 }
-                if (pctRect(vp, 0.0469, 0.2167, 0.1719, 0.0611).contains(m))
+                if (in.clicked() && pctRect(vp, 0.0469, 0.2167, 0.1719, 0.0611).contains(m))
                 {
                     onMenu_SETTINGS_MENU_MAIN_Item2();
+                    g_p1_menu_1_open = false;
                     return;
                 }
-                if (pctRect(vp, 0.0469, 0.2778, 0.1719, 0.0611).contains(m))
+                if (in.clicked() && pctRect(vp, 0.0469, 0.2778, 0.1719, 0.0611).contains(m))
                 {
                     onMenu_SETTINGS_MENU_MAIN_Item3();
+                    g_p1_menu_1_open = false;
                     return;
                 }
             }
@@ -332,9 +342,9 @@ namespace ui {
                 vp.textIn(r0.inset(14), "回到主页", 24, RGB(238, 242, 255), Align::Left);
                 const Rect r1 = pctRect(vp, 0.0469, 0.2167, 0.1719, 0.0611);
                 const bool h1 = r1.contains(m);
-                fillRound(r1, 8, h1 ? RGB(42, 58, 86) : RGB(26, 32, 48));
+                fillRound(r1, 8, h1 ? RGB(42, 58, 86) : RGB(35, 48, 74));
                 frameRound(r1, 8, 2, RGB(92, 124, 196));
-                vp.textIn(r1.inset(14), "音量", 24, RGB(238, 242, 255), Align::Left);
+                vp.textIn(r1.inset(14), "音量", 24, RGB(255, 212, 121), Align::Left);
                 const Rect r2 = pctRect(vp, 0.0469, 0.2778, 0.1719, 0.0611);
                 const bool h2 = r2.contains(m);
                 fillRound(r2, 8, h2 ? RGB(42, 58, 86) : RGB(26, 32, 48));

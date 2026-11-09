@@ -181,12 +181,39 @@
           "y": 60,
           "w": 220,
           "text": "菜单",
-          "items": [
-            "回到主页",
-            "音量",
-            "关于"
-          ],
           "defaultOpen": false,
+          "items": [
+            {
+              "text": "回到主页",
+              "target": "p1",
+              "itemBg": "",
+              "itemHoverBg": "",
+              "textColor": "",
+              "fontSize": 0,
+              "enabled": true,
+              "handler": ""
+            },
+            {
+              "text": "音量",
+              "target": "",
+              "itemBg": "#23304a",
+              "itemHoverBg": "",
+              "textColor": "#ffd479",
+              "fontSize": 0,
+              "enabled": true,
+              "handler": ""
+            },
+            {
+              "text": "关于",
+              "target": "",
+              "itemBg": "",
+              "itemHoverBg": "",
+              "textColor": "",
+              "fontSize": 0,
+              "enabled": true,
+              "handler": ""
+            }
+          ],
           "uid": "w7",
           "h": 184,
           "visible": true,
@@ -197,6 +224,10 @@
           "headerHeight": 52,
           "itemHeight": 44,
           "itemFontSize": 24,
+          "expandDir": "down",
+          "trigger": "click",
+          "closeOnSelect": true,
+          "closeOnOutside": true,
           "headerBg": "#222a3e",
           "headerHoverBg": "#3e5684",
           "itemBg": "#1a2030",

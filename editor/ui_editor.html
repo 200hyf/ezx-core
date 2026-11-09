@@ -170,6 +170,22 @@
   .row2 .field label{display:block; width:auto; margin-bottom:3px}
   .row2 .field input{width:100%}
   .hint{color:var(--muted); font-size:11px; line-height:1.5; margin:6px 0 10px}
+  .menu-item-card{border:1px solid var(--line); border-radius:7px; padding:7px; margin-bottom:8px; background:#121722}
+  .mi-top{display:flex; align-items:center; gap:4px; margin-bottom:5px}
+  .mi-no{color:var(--muted); font-size:11px; margin-right:auto}
+  .mi-top .mini{background:transparent;border:0;color:var(--muted);cursor:pointer}
+  .mi-top .mini:hover{color:var(--text)}
+  .menu-item-card input[type=text],.menu-item-card select,.menu-item-card textarea{
+    width:100%; box-sizing:border-box; background:var(--panel2); border:1px solid var(--line);
+    color:var(--text); border-radius:4px; padding:4px 6px; margin-bottom:5px; outline:none;
+  }
+  .menu-item-card textarea{height:46px; resize:vertical; font-family:Consolas,monospace; font-size:11px}
+  .mi-colors{display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-bottom:5px}
+  .mi-colors label{font-size:10px; color:var(--muted); display:flex; flex-direction:column; gap:2px}
+  .mi-colors input[type=color]{width:100%; height:22px; padding:0; border:1px solid var(--line); background:var(--panel2); border-radius:3px}
+  .mi-row{display:flex; gap:10px; align-items:center; margin-bottom:5px; font-size:11px; color:var(--muted)}
+  .mi-row input[type=number]{width:58px; background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:3px}
+  .mi-chk{display:flex; align-items:center; gap:4px; color:var(--text)}
   .type-title{display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:14px; font-weight:600}
   .badge{background:#22304a; color:var(--accent2); border-radius:4px; padding:1px 6px; font-size:11px}
   .actions-row{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0}
@@ -456,8 +472,16 @@ function defaults(type) {
     w: 280, h: 200, text: '菜单', fontSize: 26,
     headerHeight: 52, itemHeight: 44,
     itemFontSize: 24,
-    items: ['开始游戏', '设置', '退出'],
+    items: [
+      { text: '开始游戏', target: '', itemBg: '', itemHoverBg: '', textColor: '', fontSize: 0, enabled: true, handler: '' },
+      { text: '设置', target: '', itemBg: '', itemHoverBg: '', textColor: '', fontSize: 0, enabled: true, handler: '' },
+      { text: '退出', target: '', itemBg: '', itemHoverBg: '', textColor: '', fontSize: 0, enabled: true, handler: '' }
+    ],
     defaultOpen: false,
+    expandDir: 'down',
+    trigger: 'click',
+    closeOnSelect: true,
+    closeOnOutside: true,
     headerBg: '#222a3e', headerHoverBg: '#3e5684',
     itemBg: '#1a2030', itemHoverBg: '#2a3a56',
     textColor: '#eef2ff', borderColor: '#5c7cc4',
@@ -503,9 +527,25 @@ function normalizeWidgets(list) {
     if (w.type === 'input' && !w.id) w.id = 'INPUT_' + (i + 1);
     if (w.type === 'menu') {
       if (!w.id) w.id = 'MENU_' + (i + 1);
-      w.items = Array.isArray(w.items) ? w.items.map(x => String(x).trim()).filter(Boolean) : [];
+      w.items = (Array.isArray(w.items) ? w.items : []).map((it, ii) => {
+        if (typeof it === 'string') it = { text: it };
+        return {
+          text: String(it.text || ('菜单项 ' + (ii + 1))),
+          target: String(it.target || ''),
+          itemBg: String(it.itemBg || ''),
+          itemHoverBg: String(it.itemHoverBg || ''),
+          textColor: String(it.textColor || ''),
+          fontSize: Math.max(0, Math.round(num(it.fontSize, 0))),
+          enabled: it.enabled !== false,
+          handler: String(it.handler || '')
+        };
+      });
       w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
       w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
+      w.expandDir = w.expandDir === 'up' ? 'up' : 'down';
+      w.trigger = w.trigger === 'hover' ? 'hover' : 'click';
+      w.closeOnSelect = w.closeOnSelect !== false;
+      w.closeOnOutside = w.closeOnOutside !== false;
       w.h = w.headerHeight + w.items.length * w.itemHeight;
     }
   });
@@ -574,7 +614,11 @@ function sampleProject() {
       {
         key: 'p2', id: 'SETTINGS', name: '设置页',
         widgets: [
-          { type: 'menu', id: 'MENU_MAIN', x: 60, y: 60, w: 220, text: '菜单', items: ['回到主页', '音量', '关于'], defaultOpen: false },
+          { type: 'menu', id: 'MENU_MAIN', x: 60, y: 60, w: 220, text: '菜单', defaultOpen: false, items: [
+            { text: '回到主页', target: 'p1' },
+            { text: '音量', itemBg: '#23304a', textColor: '#ffd479' },
+            { text: '关于' }
+          ] },
           { type: 'panel', x: 390, y: 100, w: 500, h: 520, fillColor: '#1a2030', borderColor: '#3a4a6a', borderWidth: 2, radius: 12, bgImage: 'res/bg.png' },
           { type: 'label', x: 390, y: 140, w: 500, h: 70, text: '设置', fontSize: 44, color: '#f2f6ff', align: 'center' },
           { type: 'button', id: 'BTN_BACK', x: 480, y: 500, w: 320, h: 60, text: '返回', fontSize: 28, target: 'p1', iconPath: 'res/logo.png', iconSize: 36, iconGap: 8, iconPos: 'left' }
@@ -721,6 +765,9 @@ function deletePage(i) {
   project.pages.splice(i, 1);
   project.pages.forEach(p => p.widgets.forEach(w => {
     if (w.target === pg.key) w.target = '';
+    if (w.type === 'menu' && Array.isArray(w.items)) {
+      w.items.forEach(it => { if (it.target === pg.key) it.target = ''; });
+    }
   }));
   project.activePage = clamp(project.activePage, 0, project.pages.length - 1);
   project.widgets = project.pages[project.activePage].widgets;
@@ -800,6 +847,17 @@ function exitPreview() {
   renderSelection();
   setTimeout(fitIfNeeded, 0);
 }
+function closePreviewMenus(exceptUid) {
+  let changed = false;
+  project.widgets.forEach(m => {
+    if (m.type === 'menu' && m.uid !== exceptUid && m.closeOnOutside && previewMenuOpen[m.uid]) {
+      previewMenuOpen[m.uid] = false;
+      changed = true;
+    }
+  });
+  if (changed) renderStage();
+}
+
 function previewClick(w) {
   const btnText = String(w.text || w.id || '按钮');
   const code = handlerCodeSnippet(w.handler);
@@ -955,9 +1013,13 @@ function renderStage() {
     } else if (w.type === 'menu') {
       el.style.background = 'transparent';
       el.style.overflow = 'visible';
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.justifyContent = w.expandDir === 'up' ? 'flex-end' : 'flex-start';
       const isPreview = document.body.classList.contains('preview');
       if (isPreview && !(w.uid in previewMenuOpen)) previewMenuOpen[w.uid] = !!w.defaultOpen;
       const open = isPreview ? !!previewMenuOpen[w.uid] : true;
+
       const header = document.createElement('div');
       header.className = 'menu-header';
       header.dataset.menuPart = 'header';
@@ -974,25 +1036,48 @@ function renderStage() {
       arrow.style.opacity = '.75';
       header.appendChild(title);
       header.appendChild(arrow);
-      header.addEventListener('mouseenter', () => { header.style.background = w.headerHoverBg || w.headerBg; });
+      header.addEventListener('mouseenter', () => {
+        header.style.background = w.headerHoverBg || w.headerBg;
+        if (isPreview && w.trigger === 'hover' && !previewMenuOpen[w.uid]) {
+          previewMenuOpen[w.uid] = true;
+          renderStage();
+        }
+      });
       header.addEventListener('mouseleave', () => { header.style.background = w.headerBg || '#222a3e'; });
-      el.appendChild(header);
-      if (open) {
-        (w.items || []).forEach((text, i) => {
-          const item = document.createElement('div');
-          item.className = 'menu-item';
-          item.dataset.menuPart = 'item';
-          item.dataset.index = i;
-          item.style.height = (w.itemHeight || 44) + 'px';
-          item.style.background = w.itemBg || '#1a2030';
-          item.style.border = (w.borderWidth || 0) + 'px solid ' + (w.borderColor || '#5c7cc4');
-          item.style.borderRadius = (w.radius || 0) + 'px';
-          item.style.color = w.textColor || '#eef2ff';
-          item.style.fontSize = (w.itemFontSize || 24) + 'px';
-          item.textContent = text;
-          item.addEventListener('mouseenter', () => { item.style.background = w.itemHoverBg || w.itemBg; });
-          item.addEventListener('mouseleave', () => { item.style.background = w.itemBg || '#1a2030'; });
-          el.appendChild(item);
+
+      const makeItem = (it, i) => {
+        const item = document.createElement('div');
+        item.className = 'menu-item';
+        item.dataset.menuPart = 'item';
+        item.dataset.index = i;
+        item.style.height = (w.itemHeight || 44) + 'px';
+        item.style.background = it.itemBg || w.itemBg || '#1a2030';
+        item.style.border = (w.borderWidth || 0) + 'px solid ' + (w.borderColor || '#5c7cc4');
+        item.style.borderRadius = (w.radius || 0) + 'px';
+        item.style.color = it.textColor || w.textColor || '#eef2ff';
+        item.style.fontSize = (it.fontSize > 0 ? it.fontSize : (w.itemFontSize || 24)) + 'px';
+        item.style.opacity = it.enabled === false ? '.55' : '1';
+        item.textContent = it.text || '';
+        const hoverBg = it.itemHoverBg || w.itemHoverBg || it.itemBg || w.itemBg;
+        item.addEventListener('mouseenter', () => { item.style.background = hoverBg; });
+        item.addEventListener('mouseleave', () => { item.style.background = it.itemBg || w.itemBg || '#1a2030'; });
+        return item;
+      };
+
+      if (w.expandDir === 'up') {
+        if (open) (w.items || []).forEach((it, i) => el.appendChild(makeItem(it, i)));
+        el.appendChild(header);
+      } else {
+        el.appendChild(header);
+        if (open) (w.items || []).forEach((it, i) => el.appendChild(makeItem(it, i)));
+      }
+
+      if (isPreview && w.trigger === 'hover' && w.closeOnOutside) {
+        el.addEventListener('mouseleave', () => {
+          if (previewMenuOpen[w.uid]) {
+            previewMenuOpen[w.uid] = false;
+            renderStage();
+          }
         });
       }
     } else if (w.type === 'input') {
@@ -1132,6 +1217,41 @@ function bgImageFields(w) {
       <input type="file" accept="image/*" data-file="bgimg" style="flex:1;color:var(--muted)">
     </div>
     <div class="hint">背景图会拉伸铺满控件（按钮/面板/输入框）；预览只用于编辑器。</div>`;
+}
+
+function menuItemEditorHTML(w) {
+  let h = `<div class="field"><label>菜单项</label></div>
+    <div class="hint">每一项都可以单独设置文字、跳转页面、颜色、字号、可用和逻辑。</div>`;
+  (w.items || []).forEach((it, i) => {
+    const bg = it.itemBg || w.itemBg || '#1a2030';
+    const hov = it.itemHoverBg || w.itemHoverBg || bg;
+    const tc = it.textColor || w.textColor || '#eef2ff';
+    h += `<div class="menu-item-card" data-card="${i}">
+      <div class="mi-top">
+        <span class="mi-no">#${i + 1}</span>
+        <button class="mini" data-item-action="up" data-index="${i}" title="上移">↑</button>
+        <button class="mini" data-item-action="down" data-index="${i}" title="下移">↓</button>
+        <button class="mini" data-item-action="del" data-index="${i}" title="删除">×</button>
+      </div>
+      <input type="text" data-item-prop="text" data-index="${i}" value="${escHtml(it.text || '')}" placeholder="菜单项文字">
+      <select data-item-prop="target" data-index="${i}">
+        <option value="">不跳转</option>
+        ${project.pages.map(pg => `<option value="${escHtml(pg.key)}" ${it.target === pg.key ? 'selected' : ''}>${escHtml(pg.name)}</option>`).join('')}
+      </select>
+      <div class="mi-colors">
+        <label>底色<input type="color" data-item-prop="itemBg" data-index="${i}" value="${escHtml(bg)}"></label>
+        <label>悬停<input type="color" data-item-prop="itemHoverBg" data-index="${i}" value="${escHtml(hov)}"></label>
+        <label>文字<input type="color" data-item-prop="textColor" data-index="${i}" value="${escHtml(tc)}"></label>
+      </div>
+      <div class="mi-row">
+        <label>字号 <input type="number" data-item-prop="fontSize" data-index="${i}" value="${it.fontSize || 0}" min="0" max="200"></label>
+        <label class="mi-chk"><input type="checkbox" data-item-prop="enabled" data-index="${i}" ${it.enabled !== false ? 'checked' : ''}> 可用</label>
+      </div>
+      <textarea data-item-prop="handler" data-index="${i}" placeholder="这一项的其他 C++ 逻辑">${escHtml(it.handler || '')}</textarea>
+    </div>`;
+  });
+  h += `<div class="actions-row"><button class="btn" data-item-action="add">+ 添加菜单项</button></div>`;
+  return h;
 }
 
 function checkField(label, prop, checked) {
@@ -1318,12 +1438,24 @@ function renderProps() {
       ${numberField('按钮高度', 'headerHeight', w.headerHeight, 24, 200)}
       ${numberField('菜单项高度', 'itemHeight', w.itemHeight, 20, 160)}
     </div>`;
-    html += `<div class="field"><label>菜单项</label></div>
-      <div class="hint">一行一个菜单项，生成 <code>Item1/Item2/...</code> 回调。</div>
-      <textarea data-prop="itemsText" spellcheck="false">${escHtml((w.items || []).join('\n'))}</textarea>`;
+    html += `<div class="field"><label>展开方向</label>
+      <select data-prop="expandDir">
+        <option value="down" ${w.expandDir !== 'up' ? 'selected' : ''}>向下展开</option>
+        <option value="up" ${w.expandDir === 'up' ? 'selected' : ''}>向上展开</option>
+      </select></div>`;
+    html += `<div class="field"><label>触发方式</label>
+      <select data-prop="trigger">
+        <option value="click" ${w.trigger !== 'hover' ? 'selected' : ''}>点击展开/收起</option>
+        <option value="hover" ${w.trigger === 'hover' ? 'selected' : ''}>鼠标悬停展开</option>
+      </select></div>`;
+    html += `<div class="field"><label>收起规则</label><div class="chk">
+      <label><input type="checkbox" data-prop="closeOnSelect" ${w.closeOnSelect ? 'checked' : ''}> 选择后收起</label>
+      <label><input type="checkbox" data-prop="closeOnOutside" ${w.closeOnOutside ? 'checked' : ''}> 点外部收起</label>
+    </div></div>`;
     html += `<div class="field"><label>默认展开</label><div class="chk">
       <label><input type="checkbox" data-prop="defaultOpen" ${w.defaultOpen ? 'checked' : ''}> 打开时展开</label>
     </div></div>`;
+    html += menuItemEditorHTML(w);
     html += colorField('按钮底色', 'headerBg', w.headerBg);
     html += colorField('按钮悬停色', 'headerHoverBg', w.headerHoverBg);
     html += colorField('菜单项底色', 'itemBg', w.itemBg);
@@ -1470,9 +1602,22 @@ function duplicateSelected() {
 /* ------------------------------- 属性修改 ------------------------------- */
 function syncMenuHeight(w) {
   if (!w || w.type !== 'menu') return;
-  w.items = Array.isArray(w.items) ? w.items.map(x => String(x).trim()).filter(Boolean) : [];
+  w.items = (Array.isArray(w.items) ? w.items : []).map((it, i) => ({
+    text: String(it.text || ('菜单项 ' + (i + 1))),
+    target: String(it.target || ''),
+    itemBg: String(it.itemBg || ''),
+    itemHoverBg: String(it.itemHoverBg || ''),
+    textColor: String(it.textColor || ''),
+    fontSize: Math.max(0, Math.round(num(it.fontSize, 0))),
+    enabled: it.enabled !== false,
+    handler: String(it.handler || '')
+  }));
   w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
   w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
+  w.expandDir = w.expandDir === 'up' ? 'up' : 'down';
+  w.trigger = w.trigger === 'hover' ? 'hover' : 'click';
+  w.closeOnSelect = w.closeOnSelect !== false;
+  w.closeOnOutside = w.closeOnOutside !== false;
   w.h = w.headerHeight + w.items.length * w.itemHeight;
 }
 
@@ -1489,12 +1634,33 @@ function setWidgetProp(w, prop, value) {
     if (prop === 'borderWidth') value = clamp(value, 0, 20);
     if (prop === 'radius') value = clamp(value, 0, 200);
   }
-  if (prop === 'visible' || prop === 'enabled' || prop === 'digitsOnly' || prop === 'password' || prop === 'defaultOpen') {
+  if (prop === 'visible' || prop === 'enabled' || prop === 'digitsOnly' || prop === 'password' ||
+      prop === 'defaultOpen' || prop === 'closeOnSelect' || prop === 'closeOnOutside') {
     value = !!value;
   }
   w[prop] = value;
 }
+function applyMenuItemInput(el) {
+  const w = selected();
+  if (!w || w.type !== 'menu') return;
+  const idx = Number(el.dataset.index);
+  const it = w.items[idx];
+  if (!it) return;
+  const prop = el.dataset.itemProp;
+  let value = el.type === 'checkbox' ? el.checked : el.value;
+  if (prop === 'fontSize') value = Math.max(0, Math.round(num(value, 0)));
+  if (prop === 'enabled') value = !!value;
+  historyPush();
+  it[prop] = value;
+  if (['text', 'itemBg', 'itemHoverBg', 'textColor', 'fontSize', 'enabled'].includes(prop)) {
+    renderStage();
+  }
+  saveLocal();
+}
+
 function onPropInput(e) {
+  const itemEl = e.target.closest('[data-item-prop]');
+  if (itemEl) { applyMenuItemInput(itemEl); return; }
   const el = e.target.closest('[data-prop]');
   if (!el) return;
   const prop = el.dataset.prop;
@@ -1872,10 +2038,24 @@ function generateCode(p) {
     i4('}');
     a('');
     (w.items || []).forEach((item, i) => {
-      i4('// 菜单项：' + String(item));
+      const targetPage = item.target ? pages.find(pg => pg.key === item.target) : null;
+      i4('// 菜单项：' + String(item.text || ''));
       i4('static void ' + w._itemFuncs[i] + '()');
       i4('{');
-      i8('// TODO: 菜单项“' + String(item).replace(/\r?\n/g, ' ') + '”的逻辑');
+      if (targetPage) {
+        i8('// 页面跳转（编辑器里配置的）');
+        i8('goPage(' + targetPage._cppId + ');');
+        i8('');
+        i8('// 其他逻辑写在这里：');
+      } else {
+        i8('// 这个菜单项没有配置页面跳转，逻辑写在这里：');
+      }
+      const body = String(item.handler || '').replace(/\r/g, '').split('\n');
+      let wrote = false;
+      body.forEach(line => {
+        if (line.trim() !== '') { L.push('        ' + line); wrote = true; }
+      });
+      if (!wrote) i8('// TODO: 菜单项“' + String(item.text || '').replace(/\r?\n/g, ' ') + '”的逻辑');
       i4('}');
       a('');
     });
@@ -1910,23 +2090,35 @@ function generateCode(p) {
       a('');
     }
     if (clickMenus.length) {
-      i8('// 伸缩菜单：点标题展开/收起，展开后点菜单项');
+      i8('// 伸缩菜单：展开/收起、菜单项点击');
       clickMenus.forEach(w => {
-        i8('if (in.clicked() && inArea)');
+        const hdy = w.expandDir === 'up' ? (w.items.length * w.itemHeight) : 0;
+        const headerR = rectAt(w, hdy, w.headerHeight);
+        const fullR = rectExpr(w);
+        i8('if (inArea)');
         i8('{');
-        i12('if (' + rectAt(w, 0, w.headerHeight) + '.contains(m))');
-        i12('{');
-        i12('    ' + w._openVar + ' = !' + w._openVar + ';');
-        i12('    ' + w._toggleFunc + '();');
-        i12('    return;');
-        i12('}');
+        if (w.trigger === 'hover') {
+          i12('if (' + headerR + '.contains(m)) ' + w._openVar + ' = true;');
+          if (w.closeOnOutside) i12('else if (!' + fullR + '.contains(m)) ' + w._openVar + ' = false;');
+        } else {
+          i12('if (in.clicked() && ' + headerR + '.contains(m))');
+          i12('{');
+          i12('    ' + w._openVar + ' = !' + w._openVar + ';');
+          i12('    ' + w._toggleFunc + '();');
+          i12('    return;');
+          i12('}');
+          if (w.closeOnOutside) i12('if (in.clicked() && !' + fullR + '.contains(m)) ' + w._openVar + ' = false;');
+        }
         if ((w.items || []).length) {
           i12('if (' + w._openVar + ')');
           i12('{');
           (w.items || []).forEach((item, i) => {
-            i12('    if (' + rectAt(w, w.headerHeight + i * w.itemHeight, w.itemHeight) + '.contains(m))');
+            if (item.enabled === false) return;
+            const idy = w.expandDir === 'up' ? i * w.itemHeight : w.headerHeight + i * w.itemHeight;
+            i12('    if (in.clicked() && ' + rectAt(w, idy, w.itemHeight) + '.contains(m))');
             i12('    {');
             i12('        ' + w._itemFuncs[i] + '();');
+            if (w.closeOnSelect) i12('        ' + w._openVar + ' = false;');
             i12('        return;');
             i12('    }');
           });
@@ -2002,8 +2194,9 @@ function generateCode(p) {
         const radius = Math.round(num(w.radius, 0));
         const bw = Math.round(num(w.borderWidth, 0));
         i8('// 伸缩菜单：' + String(w.text || w.id || ''));
+        const hdy = w.expandDir === 'up' ? (w.items.length * w.itemHeight) : 0;
         i8('{');
-        i12('const Rect r = ' + rectAt(w, 0, w.headerHeight) + ';');
+        i12('const Rect r = ' + rectAt(w, hdy, w.headerHeight) + ';');
         i12('const bool hover = r.contains(m);');
         i12('fillRound(r, ' + radius + ', hover ? ' + rgbExpr(w.headerHoverBg) + ' : ' + rgbExpr(w.headerBg) + ');');
         if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
@@ -2013,11 +2206,16 @@ function generateCode(p) {
         i12('if (' + w._openVar + ')');
         i12('{');
         (w.items || []).forEach((item, i) => {
-          i12('    const Rect r' + i + ' = ' + rectAt(w, w.headerHeight + i * w.itemHeight, w.itemHeight) + ';');
+          const idy = w.expandDir === 'up' ? i * w.itemHeight : w.headerHeight + i * w.itemHeight;
+          const bg = item.itemBg || w.itemBg;
+          const hov = item.enabled === false ? bg : (item.itemHoverBg || w.itemHoverBg || bg);
+          const tc = item.enabled === false ? '#6b7280' : (item.textColor || w.textColor);
+          const fs = item.fontSize > 0 ? item.fontSize : w.itemFontSize;
+          i12('    const Rect r' + i + ' = ' + rectAt(w, idy, w.itemHeight) + ';');
           i12('    const bool h' + i + ' = r' + i + '.contains(m);');
-          i12('    fillRound(r' + i + ', ' + radius + ', h' + i + ' ? ' + rgbExpr(w.itemHoverBg) + ' : ' + rgbExpr(w.itemBg) + ');');
+          i12('    fillRound(r' + i + ', ' + radius + ', h' + i + ' ? ' + rgbExpr(hov) + ' : ' + rgbExpr(bg) + ');');
           if (bw > 0) i12('    frameRound(r' + i + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
-          i12('    vp.textIn(r' + i + '.inset(14), ' + cppString(String(item)) + ', ' + Math.round(num(w.itemFontSize, 24)) + ', ' + rgbExpr(w.textColor) + ', Align::Left);');
+          i12('    vp.textIn(r' + i + '.inset(14), ' + cppString(String(item.text || '')) + ', ' + Math.round(num(fs, 24)) + ', ' + rgbExpr(tc) + ', Align::Left);');
         });
         i12('}');
         a('');
@@ -2177,6 +2375,10 @@ function init() {
     project.guideCols = clamp(Math.round(num(params.get('cols'), 4)), 1, 64);
     project.guideRows = clamp(Math.round(num(params.get('rows'), 3)), 1, 64);
   }
+  if (params.get('menudir') === 'up') {
+    const m = project.widgets.find(w => w.type === 'menu') || project.pages[1]?.widgets.find(w => w.type === 'menu');
+    if (m) m.expandDir = 'up';
+  }
 
   // 项目名
   $('#projectName').addEventListener('input', e => {
@@ -2253,6 +2455,10 @@ function init() {
   $('#stage').addEventListener('pointerdown', e => {
     if (document.body.classList.contains('preview')) {
       const el = e.target.closest('.widget');
+      if (!el) {
+        closePreviewMenus(null);
+        return;
+      }
       if (el) {
         const w = project.widgets.find(x => x.uid === el.dataset.uid);
         if (w && w.visible !== false && w.enabled !== false) {
@@ -2263,14 +2469,37 @@ function init() {
             const part = e.target.closest('[data-menu-part]');
             if (part && part.dataset.menuPart === 'header') {
               e.preventDefault();
-              previewMenuOpen[w.uid] = !previewMenuOpen[w.uid];
+              previewMenuOpen[w.uid] = w.trigger === 'hover' ? true : !previewMenuOpen[w.uid];
               addPreviewLog(`伸缩菜单“${w.text || '菜单'}” ${previewMenuOpen[w.uid] ? '展开' : '收起'}`);
               renderStage();
             } else if (part && part.dataset.menuPart === 'item') {
               e.preventDefault();
-              const idx = Number(part.dataset.index) + 1;
-              addPreviewLog(`菜单项“${part.textContent}” → 逻辑在 onMenu_${cppIdent(w.id, 'MENU_1')}_Item${idx}()`);
-              toast('菜单项逻辑在生成的 onMenu_... 回调里', 2200);
+              const item = w.items[Number(part.dataset.index)];
+              if (!item || item.enabled === false) return;
+              let ti = -1;
+              let tn = '';
+              if (item.target) {
+                ti = project.pages.findIndex(pg => pg.key === item.target);
+                if (ti >= 0) tn = project.pages[ti].name;
+              }
+              const code = handlerCodeSnippet(item.handler);
+              if (ti >= 0) {
+                addPreviewLog(`菜单项“${item.text}” → 跳转“${tn}”${code ? '；其他逻辑：' + code : ''}`);
+                if (w.closeOnSelect) previewMenuOpen[w.uid] = false;
+                switchPage(ti, true);
+                renderStage();
+                toast(`跳转“${tn}”${code ? '，还会执行其他逻辑' : ''}`, 2200);
+              } else if (code) {
+                addPreviewLog(`菜单项“${item.text}” → 其他逻辑：${code}`);
+                toast('菜单项会执行其他逻辑（见左下角）', 2200);
+              } else {
+                addPreviewLog(`菜单项“${item.text}” → 逻辑在 onMenu_${cppIdent(w.id, 'MENU_1')}_Item${Number(part.dataset.index) + 1}()`);
+                toast('菜单项逻辑在生成的 onMenu_... 回调里', 2200);
+              }
+              if (w.closeOnSelect && previewMenuOpen[w.uid] && ti < 0) {
+                previewMenuOpen[w.uid] = false;
+                renderStage();
+              }
             }
           }
         }
@@ -2317,9 +2546,30 @@ function init() {
       r.readAsDataURL(f);
       return;
     }
-    if (e.target.dataset.prop) onPropInput(e);
+    if (e.target.dataset.prop || e.target.dataset.itemProp) onPropInput(e);
   });
   $('#props').addEventListener('click', e => {
+    const itemAction = e.target.dataset.itemAction;
+    if (itemAction) {
+      const mw = selected();
+      if (!mw || mw.type !== 'menu') return;
+      const idx = Number(e.target.dataset.index);
+      historyForce();
+      if (itemAction === 'add') {
+        mw.items.push({ text: '新菜单项', target: '', itemBg: '', itemHoverBg: '', textColor: '', fontSize: 0, enabled: true, handler: '' });
+      } else if (itemAction === 'del') {
+        mw.items.splice(idx, 1);
+      } else if (itemAction === 'up' && idx > 0) {
+        const t = mw.items[idx - 1]; mw.items[idx - 1] = mw.items[idx]; mw.items[idx] = t;
+      } else if (itemAction === 'down' && idx < mw.items.length - 1) {
+        const t = mw.items[idx + 1]; mw.items[idx + 1] = mw.items[idx]; mw.items[idx] = t;
+      }
+      syncMenuHeight(mw);
+      renderStage();
+      renderProps();
+      saveLocal();
+      return;
+    }
     const action = e.target.dataset.action;
     if (!action) return;
     const w = selected();
@@ -2569,6 +2819,7 @@ function init() {
       const menuItem = document.querySelector('.w-menu .menu-item');
       menuItem.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
       ok('预览菜单项日志', $('#previewLog').textContent.includes('菜单项'));
+      ok('预览菜单项跳转', project.activePage === 0);
     } else {
       ok('预览菜单展开', false);
       ok('预览菜单项日志', false);
