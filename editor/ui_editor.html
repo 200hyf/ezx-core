@@ -78,11 +78,30 @@
   }
   .layer .mini:hover{color:var(--text)}
   .workspace{position:relative; overflow:hidden; display:flex; flex-direction:column}
+  .page-tabs{
+    height:34px; flex:none; display:flex; align-items:center; gap:4px;
+    padding:0 10px; background:var(--panel); border-bottom:1px solid var(--line);
+    overflow-x:auto; overflow-y:hidden;
+  }
+  .page-tab{
+    display:flex; align-items:center; gap:5px; white-space:nowrap;
+    background:transparent; color:var(--muted); border:1px solid transparent;
+    border-radius:5px; padding:4px 9px; font-size:12px;
+  }
+  .page-tab:hover{background:var(--panel2); color:var(--text)}
+  .page-tab.active{background:#1d2a42; border-color:var(--accent); color:var(--text)}
+  .page-tab .x{opacity:.55; padding:0 1px}
+  .page-tab .x:hover{opacity:1; color:var(--danger)}
+  .page-tab.add{color:var(--accent2); border:1px dashed #3b4b68}
   #stageWrap{flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:24px}
   #stageHolder{position:relative; flex:none}
   #stage{
     position:absolute; left:0; top:0; transform-origin:0 0; overflow:hidden;
     box-shadow:0 18px 60px rgba(0,0,0,.55); background:#12141c;
+  }
+  #stageBg{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; display:none; pointer-events:none;
   }
   #grid{position:absolute; inset:0; pointer-events:none; opacity:.7}
   #widgets{position:absolute; inset:0}
@@ -212,16 +231,18 @@
       <button class="pal-btn" data-add="label"><b>T</b><small>文字</small></button>
       <button class="pal-btn" data-add="panel"><b>▦</b><small>面板</small></button>
       <button class="pal-btn" data-add="image"><b>◫</b><small>图片</small></button>
-      <button class="pal-btn" data-add="input"><b>⌨</b><small>输入框</small></button>
+      <button class="pal-btn" data-add="input"><b>⌨</b><small>文本输入</small></button>
     </div>
     <h3>图层 <span id="layerCount" style="color:var(--muted)"></span></h3>
     <div id="layers"></div>
   </aside>
 
   <section class="workspace">
+    <div id="pageTabs" class="page-tabs"></div>
     <div id="stageWrap">
       <div id="stageHolder">
         <div id="stage">
+          <img id="stageBg" alt="">
           <div id="grid"></div>
           <div id="widgets"></div>
           <div id="selection">
@@ -353,19 +374,21 @@ function alignExpr(a) {
 }
 
 /* ------------------------------- 数据 ------------------------------- */
-const TYPE_LABEL = { button: '按钮', label: '文字', panel: '面板', image: '图片', input: '输入框' };
+const TYPE_LABEL = { button: '按钮', label: '文字', panel: '面板', image: '图片', input: '文本输入' };
 const TYPE_ICON = { button: '▭', label: 'T', panel: '▦', image: '◫', input: '⌨' };
 
 function defaults(type) {
   const base = {
     uid: uid(), type, id: '', x: 0, y: 0, w: 200, h: 60,
-    visible: true, enabled: true
+    visible: true, enabled: true, centerH: false, centerV: false
   };
   if (type === 'button') return Object.assign(base, {
     w: 280, h: 64, text: '按钮', fontSize: 28,
     textColor: '#eef2ff', normalBg: '#222a3e', hoverBg: '#3e5684',
     borderColor: '#5c7cc4', borderWidth: 2, radius: 8,
     disabledBg: '#262a33', disabledText: '#777d8a',
+    iconPath: '', iconSize: 40, iconGap: 10, iconPos: 'left', iconPreviewData: '',
+    target: '',
     handler: '// TODO: 在这里写点击逻辑'
   });
   if (type === 'label') return Object.assign(base, {
@@ -405,19 +428,10 @@ function uniqueId(prefix) {
   return prefix + '_' + i;
 }
 
-function normalizeProject(p) {
-  const out = Object.assign({
-    version: 1, name: '未命名界面',
-    designW: W_DEFAULT, designH: H_DEFAULT,
-    bg: '#12141c', grid: 8,
-    widgets: []
-  }, p || {});
-  out.designW = clamp(num(out.designW, W_DEFAULT), 320, 3840);
-  out.designH = clamp(num(out.designH, H_DEFAULT), 240, 2160);
-  out.grid = clamp(num(out.grid, 8), 2, 64);
-  out.widgets = Array.isArray(out.widgets) ? out.widgets : [];
+function normalizeWidgets(list) {
+  const arr = Array.isArray(list) ? list : [];
   const seen = new Set();
-  out.widgets.forEach((w, i) => {
+  arr.forEach((w, i) => {
     const d = defaults(w.type || 'button');
     const merged = Object.assign({}, d, w);
     Object.assign(w, merged);
@@ -430,6 +444,42 @@ function normalizeProject(p) {
     if (w.type === 'button' && !w.id) w.id = 'BTN_' + (i + 1);
     if (w.type === 'input' && !w.id) w.id = 'INPUT_' + (i + 1);
   });
+  return arr;
+}
+
+function normalizeProject(p) {
+  const out = Object.assign({
+    version: 1, name: '未命名界面',
+    designW: W_DEFAULT, designH: H_DEFAULT,
+    bg: '#12141c', bgImage: '', bgFit: 'cover', bgPreviewData: '',
+    grid: 8, pages: null, activePage: 0,
+    widgets: []
+  }, p || {});
+  out.designW = clamp(num(out.designW, W_DEFAULT), 320, 3840);
+  out.designH = clamp(num(out.designH, H_DEFAULT), 240, 2160);
+  out.grid = clamp(num(out.grid, 8), 2, 64);
+
+  let pages = Array.isArray(out.pages) && out.pages.length ? out.pages : null;
+  if (!pages) {
+    pages = [{ key: 'p1', id: 'MAIN', name: '主页面', widgets: Array.isArray(out.widgets) ? out.widgets : [] }];
+  }
+  const seenKeys = new Set();
+  pages = pages.map((pg, i) => {
+    let key = String(pg.key || ('p' + (i + 1)));
+    let n = 2;
+    while (seenKeys.has(key)) key = 'p' + (i + 1) + '_' + (n++);
+    seenKeys.add(key);
+    return {
+      key,
+      id: String(pg.id || ('PAGE_' + (i + 1))).trim() || ('PAGE_' + (i + 1)),
+      name: String(pg.name || ('页面 ' + (i + 1))).trim() || ('页面 ' + (i + 1)),
+      widgets: normalizeWidgets(pg.widgets)
+    };
+  });
+  out.pages = pages;
+  out.activePage = clamp(Math.round(num(out.activePage, 0)), 0, pages.length - 1);
+  out.widgets = pages[out.activePage].widgets;
+  out.bgFit = ['cover', 'fit', 'stretch'].includes(out.bgFit) ? out.bgFit : 'cover';
   return out;
 }
 
@@ -437,14 +487,28 @@ function sampleProject() {
   const p = normalizeProject({
     name: '我的游戏',
     designW: 1280, designH: 720,
-    bg: '#12141c', grid: 8,
-    widgets: [
-      { type: 'image', x: 565, y: 55, w: 150, h: 150, path: 'res/logo.png', fit: 'fit' },
-      { type: 'label', x: 0, y: 220, w: 1280, h: 70, text: '我的游戏', fontSize: 52, color: '#f2f6ff', align: 'center' },
-      { type: 'button', id: 'BTN_START', x: 480, y: 320, w: 320, h: 60, text: '开始游戏', fontSize: 28, handler: '// TODO: 开始游戏\n// startGame();' },
-      { type: 'button', id: 'BTN_SETTINGS', x: 480, y: 392, w: 320, h: 60, text: '设置', fontSize: 28 },
-      { type: 'button', id: 'BTN_QUIT', x: 480, y: 464, w: 320, h: 60, text: '退出', fontSize: 28 },
-      { type: 'input', id: 'INPUT_NAME', x: 480, y: 560, w: 320, h: 60, placeholder: '输入昵称…', fontSize: 24, maxLen: 12 }
+    bg: '#12141c', bgImage: 'res/bg.png', bgFit: 'cover', grid: 8,
+    activePage: 0,
+    pages: [
+      {
+        key: 'p1', id: 'MAIN', name: '主页面',
+        widgets: [
+          { type: 'image', x: 565, y: 55, w: 150, h: 150, path: 'res/logo.png', fit: 'fit' },
+          { type: 'label', x: 0, y: 220, w: 1280, h: 70, text: '我的游戏', fontSize: 52, color: '#f2f6ff', align: 'center' },
+          { type: 'button', id: 'BTN_START', x: 480, y: 320, w: 320, h: 60, text: '开始游戏', fontSize: 28, handler: '// TODO: 开始游戏\n// startGame();' },
+          { type: 'button', id: 'BTN_SETTINGS', x: 480, y: 392, w: 320, h: 60, text: '设置', fontSize: 28, target: 'p2' },
+          { type: 'button', id: 'BTN_QUIT', x: 480, y: 464, w: 320, h: 60, text: '退出', fontSize: 28 },
+          { type: 'input', id: 'INPUT_NAME', x: 480, y: 560, w: 320, h: 60, placeholder: '输入昵称…', fontSize: 24, maxLen: 12 }
+        ]
+      },
+      {
+        key: 'p2', id: 'SETTINGS', name: '设置页',
+        widgets: [
+          { type: 'panel', x: 390, y: 100, w: 500, h: 520, fillColor: '#1a2030', borderColor: '#3a4a6a', borderWidth: 2, radius: 12 },
+          { type: 'label', x: 390, y: 140, w: 500, h: 70, text: '设置', fontSize: 44, color: '#f2f6ff', align: 'center' },
+          { type: 'button', id: 'BTN_BACK', x: 480, y: 500, w: 320, h: 60, text: '返回', fontSize: 28, target: 'p1', iconPath: 'res/logo.png', iconSize: 36, iconGap: 8, iconPos: 'left' }
+        ]
+      }
     ]
   });
   return p;
@@ -490,7 +554,11 @@ function redo() {
 /* ------------------------------- 保存 ------------------------------- */
 function serializeProject() {
   const p = deep(project);
-  p.widgets.forEach(w => { delete w.previewData; });
+  (p.pages || []).forEach(pg => {
+    (pg.widgets || []).forEach(w => { delete w.previewData; delete w.iconPreviewData; });
+  });
+  delete p.widgets;
+  delete p.bgPreviewData;
   return p;
 }
 let saveTimer = null;
@@ -524,6 +592,81 @@ function select(uidValue) {
   renderSelection();
 }
 
+/* ------------------------------- 页面 ------------------------------- */
+function syncPageWidgets() {
+  if (project.pages[project.activePage]) {
+    project.pages[project.activePage].widgets = project.widgets;
+  }
+}
+function renderPageTabs() {
+  const box = $('#pageTabs');
+  if (!box) return;
+  box.innerHTML = '';
+  project.pages.forEach((pg, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'page-tab' + (i === project.activePage ? ' active' : '');
+    tab.dataset.index = i;
+    tab.title = '双击重命名；C++ 页面 ID: ' + pg.id;
+    tab.innerHTML = `<span>${escHtml(pg.name)}</span>` +
+      (project.pages.length > 1 ? `<span class="x" data-close="${i}" title="删除页面">×</span>` : '');
+    box.appendChild(tab);
+  });
+  const add = document.createElement('button');
+  add.className = 'page-tab add';
+  add.textContent = '+ 页面';
+  add.addEventListener('click', addPage);
+  box.appendChild(add);
+}
+function switchPage(i) {
+  i = clamp(Math.round(i), 0, project.pages.length - 1);
+  if (i === project.activePage) return;
+  syncPageWidgets();
+  project.activePage = i;
+  project.widgets = project.pages[i].widgets;
+  selectedUid = null;
+  renderAll();
+  toast('切换到：' + project.pages[i].name);
+}
+function addPage() {
+  syncPageWidgets();
+  let n = project.pages.length + 1;
+  let key = 'p' + n;
+  while (project.pages.some(p => p.key === key)) key = 'p' + (n++) + '_x';
+  let id = 'PAGE_' + n;
+  while (project.pages.some(p => p.id === id)) id = 'PAGE_' + (n++);
+  const pg = { key, id, name: '页面 ' + n, widgets: [] };
+  project.pages.push(pg);
+  project.activePage = project.pages.length - 1;
+  project.widgets = pg.widgets;
+  selectedUid = null;
+  renderAll();
+  toast('新增页面：' + pg.name);
+}
+function deletePage(i) {
+  if (project.pages.length <= 1) { toast('至少保留一个页面'); return; }
+  const pg = project.pages[i];
+  if (!confirm('删除页面「' + pg.name + '」？上面的控件会一起删除。')) return;
+  syncPageWidgets();
+  project.pages.splice(i, 1);
+  project.pages.forEach(p => p.widgets.forEach(w => {
+    if (w.target === pg.key) w.target = '';
+  }));
+  project.activePage = clamp(project.activePage, 0, project.pages.length - 1);
+  project.widgets = project.pages[project.activePage].widgets;
+  selectedUid = null;
+  renderAll();
+}
+function renamePage(i) {
+  const pg = project.pages[i];
+  if (!pg) return;
+  const name = prompt('页面名称：', pg.name);
+  if (name === null) return;
+  pg.name = String(name).trim() || pg.name;
+  renderPageTabs();
+  renderProps();
+  saveLocal();
+}
+
 /* ------------------------------- 渲染舞台 ------------------------------- */
 function gridCss(size) {
   return `linear-gradient(to right, rgba(255,255,255,.045) 1px, transparent 1px),` +
@@ -534,6 +677,15 @@ function renderStage() {
   stage.style.width = project.designW + 'px';
   stage.style.height = project.designH + 'px';
   stage.style.background = project.bg;
+  const bg = $('#stageBg');
+  if (project.bgPreviewData) {
+    bg.src = project.bgPreviewData;
+    bg.style.display = 'block';
+    bg.style.objectFit = project.bgFit === 'cover' ? 'cover' : project.bgFit === 'stretch' ? 'fill' : 'contain';
+  } else {
+    bg.removeAttribute('src');
+    bg.style.display = 'none';
+  }
   const grid = $('#grid');
   grid.style.backgroundImage = gridCss(project.grid);
   grid.style.backgroundSize = `${project.grid}px ${project.grid}px`;
@@ -555,7 +707,34 @@ function renderStage() {
       el.style.background = w.normalBg || '#222a3e';
       el.style.color = w.textColor || '#fff';
       el.style.fontSize = (w.fontSize || 28) + 'px';
-      el.textContent = w.text || '';
+      const hasIcon = String(w.iconPath || '').trim() !== '' || w.iconPreviewData;
+      if (hasIcon) {
+        el.style.flexDirection = w.iconPos === 'top' ? 'column' : 'row';
+        el.style.gap = Math.max(0, Math.round(num(w.iconGap, 10))) + 'px';
+        const icon = document.createElement('span');
+        icon.style.cssText = 'flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;';
+        icon.style.width = Math.max(8, Math.round(num(w.iconSize, 40))) + 'px';
+        icon.style.height = icon.style.width;
+        if (w.iconPreviewData) {
+          const img = document.createElement('img');
+          img.src = w.iconPreviewData;
+          img.alt = '';
+          img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
+          icon.appendChild(img);
+        } else {
+          icon.textContent = '🖼';
+          icon.style.fontSize = '14px';
+          icon.style.color = '#8fa6c8';
+          icon.style.border = '1px dashed #4a5a7a';
+          icon.style.borderRadius = '4px';
+        }
+        const txt = document.createElement('span');
+        txt.textContent = w.text || '';
+        if (w.iconPos === 'right') { el.appendChild(txt); el.appendChild(icon); }
+        else { el.appendChild(icon); el.appendChild(txt); }
+      } else {
+        el.textContent = w.text || '';
+      }
       if (w.enabled !== false) {
         el.addEventListener('mouseenter', () => { el.style.background = w.hoverBg || w.normalBg; });
         el.addEventListener('mouseleave', () => { el.style.background = w.normalBg || '#222a3e'; });
@@ -689,9 +868,25 @@ function renderProps() {
         ${numberField('设计高', 'designH', project.designH, 240, 2160)}
       </div>
       ${colorField('背景色', 'bg', project.bg)}
+      ${inputField('背景图', 'bgImage', project.bgImage)}
+      <div class="field"><label>背景填充</label>
+        <select data-prop="bgFit">
+          <option value="cover" ${project.bgFit === 'cover' ? 'selected' : ''}>等比铺满</option>
+          <option value="fit" ${project.bgFit === 'fit' ? 'selected' : ''}>等比完整</option>
+          <option value="stretch" ${project.bgFit === 'stretch' ? 'selected' : ''}>拉伸</option>
+        </select>
+      </div>
+      <div class="field"><label>背景预览</label>
+        <input type="file" accept="image/*" data-file="bg" style="flex:1;color:var(--muted)">
+      </div>
+      <div class="hint">背景图路径相对 exe，例如 res/bg.png；预览图只用于编辑器。</div>
       ${numberField('网格', 'grid', project.grid, 2, 64)}
-      <div class="hint">设计分辨率建议保持 1280×720；代码里坐标会按这个尺寸生成。</div>
+      <h3 style="margin-top:14px">当前页面</h3>
+      ${inputField('页面名称', 'pageName', project.pages[project.activePage].name)}
+      ${inputField('页面 ID', 'pageId', project.pages[project.activePage].id)}
+      <div class="hint">页面 ID 会生成 <code>UI_PAGE_${escHtml(cppIdent(project.pages[project.activePage].id, 'MAIN'))}</code>；按钮可跳转到这里。</div>
       <div class="actions-row">
+        <button class="btn" data-action="add-page">新增页面</button>
         <button class="btn" data-action="load-sample">载入示例</button>
         <button class="btn" data-action="clear-all">清空控件</button>
       </div>`;
@@ -703,7 +898,14 @@ function renderProps() {
       <span style="color:var(--muted)">${escHtml(w.uid)}</span></div>`;
   if (w.type === 'button' || w.type === 'input') {
     html += inputField('C++ ID', 'id', w.id || '');
-    html += `<div class="hint">生成 <code>UI_${escHtml(cppIdent(w.id, 'BTN_1'))}</code>；按钮点击逻辑在 onClick 里。</div>`;
+    if (w.type === 'button') {
+      const pagePrefix = project.pages.length > 1
+        ? cppIdent(project.pages[project.activePage].id, 'PAGE') + '_'
+        : '';
+      html += `<div class="hint">生成 <code>UI_${escHtml(pagePrefix + cppIdent(w.id, 'BTN_1'))}</code>；点击逻辑在 onClick 里。</div>`;
+    } else {
+      html += `<div class="hint">生成 <code>TextInput</code>，自动处理聚焦和光标。</div>`;
+    }
   }
   html += `<div class="row2">
       ${numberField('X', 'x', w.x)}
@@ -725,6 +927,33 @@ function renderProps() {
     html += colorField('边框颜色', 'borderColor', w.borderColor);
     html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
     html += numberField('圆角', 'radius', w.radius, 0, 80);
+
+    html += inputField('图标路径', 'iconPath', w.iconPath || '');
+    html += `<div class="row2">
+      ${numberField('图标大小', 'iconSize', w.iconSize, 8, 200)}
+      ${numberField('图标间距', 'iconGap', w.iconGap, 0, 80)}
+    </div>`;
+    html += `<div class="field"><label>图标位置</label>
+      <select data-prop="iconPos">
+        <option value="left" ${w.iconPos === 'left' ? 'selected' : ''}>文字左侧</option>
+        <option value="right" ${w.iconPos === 'right' ? 'selected' : ''}>文字右侧</option>
+        <option value="top" ${w.iconPos === 'top' ? 'selected' : ''}>文字上方</option>
+      </select></div>`;
+    html += `<div class="field"><label>图标预览</label>
+      <input type="file" accept="image/*" data-file="icon" style="flex:1;color:var(--muted)">
+    </div>
+    <div class="hint">图标预览只用于编辑器；代码使用上面的路径。</div>`;
+
+    const targetOpts = project.pages.map(pg =>
+      `<option value="${escHtml(pg.key)}" ${w.target === pg.key ? 'selected' : ''}>${escHtml(pg.name)} (${escHtml(pg.id)})</option>`
+    ).join('');
+    html += `<div class="field"><label>跳转页面</label>
+      <select data-prop="target">
+        <option value="">不跳转</option>
+        ${targetOpts}
+      </select></div>
+      <div class="hint">设置后，点击按钮会先执行下面的逻辑，再自动 goPage 到目标页面。</div>`;
+
     html += `<div class="field"><label>点击逻辑</label></div>
       <div class="hint">会原样放进 <code>onClick</code> 的 case 里；可以调用你自己的函数。</div>
       <textarea data-prop="handler" spellcheck="false">${escHtml(w.handler || '')}</textarea>`;
@@ -773,6 +1002,11 @@ function renderProps() {
   }
 
   html += `<div class="actions-row">
+      <button class="btn" data-action="center-h">水平居中</button>
+      <button class="btn" data-action="center-v">垂直居中</button>
+      <button class="btn" data-action="center">页面居中</button>
+    </div>
+    <div class="actions-row">
       <button class="btn" data-action="up">上移</button>
       <button class="btn" data-action="down">下移</button>
       <button class="btn" data-action="top">置顶</button>
@@ -812,6 +1046,8 @@ function onPointerMove(e) {
   const w = project.widgets.find(x => x.uid === drag.uid);
   if (!w) return;
   if (drag.mode === 'move') {
+    w.centerH = false;
+    w.centerV = false;
     w.x = snapVal(drag.ox + dx);
     w.y = snapVal(drag.oy + dy);
   } else {
@@ -824,6 +1060,7 @@ function onPointerMove(e) {
     if (hh < 16) { if (drag.dir.includes('n')) y = drag.oy + drag.oh - 16; hh = 16; }
     w.x = snapVal(x); w.y = snapVal(y);
     w.w = Math.max(8, snapVal(ww)); w.h = Math.max(8, snapVal(hh));
+    applyCentering(w);
   }
   renderStage();
   syncPosFields();
@@ -857,7 +1094,8 @@ function addWidget(type) {
 function deleteSelected() {
   const w = selected(); if (!w) return;
   historyForce();
-  project.widgets = project.widgets.filter(x => x.uid !== w.uid);
+  const idx = project.widgets.findIndex(x => x.uid === w.uid);
+  if (idx >= 0) project.widgets.splice(idx, 1);
   selectedUid = null;
   renderAll();
 }
@@ -875,6 +1113,11 @@ function duplicateSelected() {
 }
 
 /* ------------------------------- 属性修改 ------------------------------- */
+function applyCentering(w) {
+  if (w.centerH) w.x = Math.round((project.designW - w.w) / 2);
+  if (w.centerV) w.y = Math.round((project.designH - w.h) / 2);
+}
+
 function setWidgetProp(w, prop, value) {
   if (['x','y','w','h','fontSize','maxLen','borderWidth','radius'].includes(prop)) {
     value = Math.round(num(value));
@@ -896,14 +1139,29 @@ function onPropInput(e) {
   const w = selected();
   historyPush();
   if (!w) {
-    if (['name','designW','designH','bg','grid'].includes(prop)) {
+    if (['name','designW','designH','bg','bgImage','bgFit','grid','pageName','pageId'].includes(prop)) {
       if (['designW','designH','grid'].includes(prop)) value = Math.round(num(value));
+      if (prop === 'pageName') {
+        project.pages[project.activePage].name = String(value).trim() || project.pages[project.activePage].name;
+        renderPageTabs();
+        saveLocal();
+        return;
+      }
+      if (prop === 'pageId') {
+        project.pages[project.activePage].id = String(value).trim() || project.pages[project.activePage].id;
+        renderPageTabs();
+        saveLocal();
+        return;
+      }
       project[prop] = value;
       if (prop === 'designW') project.designW = clamp(num(value, 1280), 320, 3840);
       if (prop === 'designH') project.designH = clamp(num(value, 720), 240, 2160);
       if (prop === 'grid') project.grid = clamp(num(value, 8), 2, 64);
       if (prop === 'name') $('#projectName').value = project.name;
       $('#gridSize').textContent = project.grid;
+      if (prop === 'designW' || prop === 'designH') {
+        project.widgets.forEach(applyCentering);
+      }
       renderStage();
       fitIfNeeded();
       saveLocal();
@@ -911,6 +1169,9 @@ function onPropInput(e) {
     return;
   }
   setWidgetProp(w, prop, value);
+  if (prop === 'x') w.centerH = false;
+  if (prop === 'y') w.centerV = false;
+  if (prop === 'w' || prop === 'h') applyCentering(w);
   renderStage();
   if (prop === 'id' || prop === 'text' || prop === 'placeholder') renderLayers();
   saveLocal();
@@ -941,26 +1202,68 @@ function applyZoomSelection() {
 /* ------------------------------- 代码生成 ------------------------------- */
 function generateCode(p) {
   const W = p.designW, H = p.designH;
-  const widgets = p.widgets.map(w => Object.assign({}, w));
-  const buttons = widgets.filter(w => w.type === 'button');
-  const inputs = widgets.filter(w => w.type === 'input');
-  const images = widgets.filter(w => w.type === 'image' && String(w.path || '').trim() !== '');
-  const usedIds = new Set();
+  const bgImage = String(p.bgImage || '').trim();
+  const pages = (Array.isArray(p.pages) && p.pages.length ? p.pages : [{ key: 'p1', id: 'MAIN', name: '主页面', widgets: [] }])
+    .map((pg, pi) => ({
+      key: pg.key || ('p' + pi),
+      id: pg.id || ('PAGE_' + (pi + 1)),
+      name: pg.name || ('页面 ' + (pi + 1)),
+      widgets: (pg.widgets || []).map(w => Object.assign({}, w)),
+      _index: pi
+    }));
+  const multi = pages.length > 1;
 
-  buttons.forEach((w, i) => {
-    let base = cppIdent(w.id, 'BTN_' + (i + 1));
-    let id = 'UI_' + base;
+  const usedPageIds = new Set();
+  pages.forEach((pg, pi) => {
+    const base = cppIdent(pg.id, 'PAGE_' + (pi + 1));
+    let id = 'UI_PAGE_' + base;
     let n = 2;
-    while (usedIds.has(id)) id = 'UI_' + base + '_' + (n++);
-    usedIds.add(id);
-    w._id = id;
+    while (usedPageIds.has(id)) id = 'UI_PAGE_' + base + '_' + (n++);
+    usedPageIds.add(id);
+    pg._cppId = id;
   });
-  inputs.forEach((w, i) => { w._var = 'g_input_' + (i + 1); });
-  images.forEach((w, i) => { w._var = 'g_img_' + (i + 1); });
 
-  const hasBox = widgets.some(w => ['button','panel','input'].includes(w.type));
-  const hasFrame = widgets.some(w => ['button','panel','input'].includes(w.type) && Number(w.borderWidth || 0) > 0);
-  const hasInput = inputs.length > 0;
+  const usedButtonIds = new Set();
+  pages.forEach(pg => {
+    pg.buttons = [];
+    pg.inputs = [];
+    pg.images = [];
+    const prefix = multi ? cppIdent(pg.id, 'PAGE') + '_' : '';
+    pg.widgets.forEach((w, wi) => {
+      if (w.type === 'button') {
+        const base = cppIdent(w.id, 'BTN_' + (wi + 1));
+        let id = 'UI_' + prefix + base;
+        let n = 2;
+        while (usedButtonIds.has(id)) id = 'UI_' + prefix + base + '_' + (n++);
+        usedButtonIds.add(id);
+        w._id = id;
+        pg.buttons.push(w);
+        if (String(w.iconPath || '').trim()) {
+          w._iconVar = 'g_p' + pg._index + '_icon_' + pg.buttons.length;
+        }
+        if (w.target) {
+          const t = pages.find(x => x.key === w.target);
+          w._targetId = t ? t._cppId : '';
+        }
+      } else if (w.type === 'input') {
+        pg.inputs.push(w);
+        w._var = 'g_p' + pg._index + '_input_' + pg.inputs.length;
+      } else if (w.type === 'image') {
+        if (String(w.path || '').trim()) {
+          pg.images.push(w);
+          w._var = 'g_p' + pg._index + '_img_' + pg.images.length;
+        }
+      }
+    });
+  });
+
+  const allWidgets = pages.flatMap(pg => pg.widgets);
+  const allButtons = pages.flatMap(pg => pg.buttons);
+  const allInputs = pages.flatMap(pg => pg.inputs);
+  const hasBox = allWidgets.some(w => ['button', 'panel', 'input'].includes(w.type));
+  const hasFrame = allWidgets.some(w => ['button', 'panel', 'input'].includes(w.type) && Number(w.borderWidth || 0) > 0);
+  const hasInput = allInputs.length > 0;
+  const firstPage = pages[0]._cppId;
 
   const L = [];
   const a = (s = '') => L.push(s);
@@ -972,12 +1275,16 @@ function generateCode(p) {
   a('//  ui_generated.cpp');
   a('//  由 ezx-core UI 编辑器生成');
   a('//  设计分辨率: ' + W + ' x ' + H);
+  a('//  页面: ' + pages.map(pg => pg.name + ' (' + pg._cppId + ')').join(' / '));
   a('//');
   a('//  用法（在 main 里）：');
   a('//      ui::init();                 // 建窗后调用一次');
   a('//      ...');
   a('//      ui::update(in, vp);         // 每帧');
   a('//      ui::draw(vp, in);           // 每帧，beginFrame 之后');
+  a('//');
+  a('//  页面切换：');
+  a('//      ui::goPage(UI_PAGE_SETTINGS);   // 或在按钮的「跳转页面」里设置');
   a('// ============================================================');
   a('#include "easyx_core.h"');
   if (hasInput) a('#include <chrono>');
@@ -987,19 +1294,30 @@ function generateCode(p) {
   i4('using namespace ezx;');
   a('');
 
-  if (buttons.length) {
+  i4('enum UiPage');
+  i4('{');
+  pages.forEach((pg, i) => {
+    i8(pg._cppId + ' = ' + i + (i === pages.length - 1 ? '' : ','));
+  });
+  i4('};');
+  a('');
+
+  if (allButtons.length) {
     i4('enum UiId');
     i4('{');
-    buttons.forEach((w, i) => {
-      i8(w._id + ' = ' + (i + 1) + (i === buttons.length - 1 ? '' : ','));
+    allButtons.forEach((w, i) => {
+      i8(w._id + ' = ' + (i + 1) + (i === allButtons.length - 1 ? '' : ','));
     });
     i4('};');
     a('');
   }
 
-  images.forEach(w => { i4('static Image ' + w._var + ';'); });
-  inputs.forEach(w => { i4('static TextInput ' + w._var + ';'); });
-  if (images.length || inputs.length) a('');
+  i4('static int g_page = ' + firstPage + ';');
+  if (bgImage) i4('static Image g_bg;');
+  pages.forEach(pg => pg.images.forEach(w => i4('static Image ' + w._var + ';')));
+  pages.forEach(pg => pg.buttons.forEach(w => { if (w._iconVar) i4('static Image ' + w._iconVar + ';'); }));
+  pages.forEach(pg => pg.inputs.forEach(w => i4('static TextInput ' + w._var + ';')));
+  if (bgImage || pages.some(pg => pg.images.length || pg.buttons.some(w => w._iconVar) || pg.inputs.length)) a('');
 
   if (hasBox) {
     i4('static void fillRound(const Rect& r, int radius, COLORREF color)');
@@ -1036,44 +1354,49 @@ function generateCode(p) {
     a('');
   }
 
-  // init
-  i4('void init()');
+  i4('void goPage(int page)');
   i4('{');
-  let initLines = 0;
-  images.forEach(w => {
-    if (String(w.path || '').trim()) {
-      i8(w._var + '.load(assetPath(' + cppString(w.path) + '));');
-      initLines++;
-    }
-  });
-  inputs.forEach(w => {
-    i8(w._var + '.maxLen = ' + Math.max(0, Math.round(num(w.maxLen, 16))) + ';');
-    i8(w._var + '.digitsOnly = ' + (w.digitsOnly ? 'true' : 'false') + ';');
-    i8(w._var + '.password = ' + (w.password ? 'true' : 'false') + ';');
-    if (String(w.value || '').length) i8(w._var + '.setText(' + cppString(w.value) + ');');
-    initLines += 4;
-  });
-  if (!initLines) i8('// 没有需要初始化的图片或输入框');
+  i8('if (page >= 0 && page < ' + pages.length + ') g_page = page;');
+  i4('}');
+  a('');
+  i4('int currentPage()');
+  i4('{');
+  i8('return g_page;');
   i4('}');
   a('');
 
-  // onClick
+  i4('void init()');
+  i4('{');
+  if (bgImage) i8('g_bg.load(assetPath(' + cppString(bgImage) + '));');
+  pages.forEach(pg => {
+    pg.images.forEach(w => i8(w._var + '.load(assetPath(' + cppString(w.path) + '));'));
+    pg.buttons.forEach(w => { if (w._iconVar) i8(w._iconVar + '.load(assetPath(' + cppString(w.iconPath) + '));'); });
+    pg.inputs.forEach(w => {
+      i8(w._var + '.maxLen = ' + Math.max(0, Math.round(num(w.maxLen, 16))) + ';');
+      i8(w._var + '.digitsOnly = ' + (w.digitsOnly ? 'true' : 'false') + ';');
+      i8(w._var + '.password = ' + (w.password ? 'true' : 'false') + ';');
+      if (String(w.value || '').length) i8(w._var + '.setText(' + cppString(w.value) + ');');
+    });
+  });
+  i8('g_page = ' + firstPage + ';');
+  i4('}');
+  a('');
+
   i4('void onClick(int id)');
   i4('{');
-  if (buttons.length) {
+  if (allButtons.length) {
     i8('switch (id)');
     i8('{');
-    buttons.forEach(w => {
+    allButtons.forEach(w => {
       i8('case ' + w._id + ':');
-      const comment = '        // 点击“' + String(w.text || w.id || '按钮').replace(/\r?\n/g, ' ') + '”';
-      L.push(comment);
+      L.push('            // 点击“' + String(w.text || w.id || '按钮').replace(/\r?\n/g, ' ') + '”');
       const body = String(w.handler || '').replace(/\r/g, '').split('\n');
       let wrote = false;
       body.forEach(line => {
-        if (line.trim() !== '') { L.push('            ' + line); wrote = true; }
+        if (line.trim() !== '') { L.push('                ' + line); wrote = true; }
       });
-      if (!wrote) L.push('            // TODO: 在这里写点击逻辑');
-      L.push('            break;');
+      if (!wrote) L.push('                // TODO: 在这里写点击逻辑');
+      L.push('                break;');
     });
     i8('default:');
     i8('    break;');
@@ -1084,121 +1407,174 @@ function generateCode(p) {
   i4('}');
   a('');
 
-  // update
-  const visibleInputs = inputs.filter(w => w.visible !== false && w.enabled !== false);
-  const clickButtons = buttons.filter(w => w.visible !== false && w.enabled !== false);
+  pages.forEach(pg => {
+    const visibleInputs = pg.inputs.filter(w => w.visible !== false && w.enabled !== false);
+    const clickButtons = pg.buttons.filter(w => w.visible !== false && w.enabled !== false);
+    i4('static void updatePage' + pg._index + '(const Input& in, const Viewport& vp)');
+    i4('{');
+    i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
+    i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
+    if (!visibleInputs.length && !clickButtons.length) {
+      i8('(void)inArea;');
+      i8('(void)m;');
+      i8('(void)in;');
+    } else {
+      a('');
+    }
+    if (visibleInputs.length) {
+      i8('// 输入框焦点');
+      i8('if (in.clicked())');
+      i8('{');
+      visibleInputs.forEach(w => {
+        i12(w._var + '.focused = inArea && Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }.contains(m);');
+        i12('if (' + w._var + '.focused)');
+        i12('    ' + w._var + '.placeCursor(vp, Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }, ' + Math.round(num(w.fontSize, 24)) + ', in.pos().x);');
+      });
+      i8('}');
+      visibleInputs.forEach(w => i8(w._var + '.update(in);'));
+      a('');
+    }
+    if (clickButtons.length) {
+      i8('// 按钮点击（后画的优先）');
+      i8('if (in.clicked() && inArea)');
+      i8('{');
+      clickButtons.slice().reverse().forEach(w => {
+        i12('if (Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }.contains(m)) { onClick(' + w._id + ');'
+          + (w._targetId ? ' goPage(' + w._targetId + ');' : '') + ' return; }');
+      });
+      i8('}');
+    }
+    i4('}');
+    a('');
+  });
+
   i4('void update(const Input& in, const Viewport& vp)');
   i4('{');
-  i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
-  i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
-  if (!visibleInputs.length && !clickButtons.length) {
-    i8('(void)inArea;');
-    i8('(void)m;');
-    i8('(void)in;');
-    a('');
-  } else {
-    a('');
-  }
-  if (visibleInputs.length) {
-    i8('// 输入框焦点');
-    i8('if (in.clicked())');
-    i8('{');
-    visibleInputs.forEach(w => {
-      i12(w._var + '.focused = inArea && Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }.contains(m);');
-      i12('if (' + w._var + '.focused)');
-      i12('    ' + w._var + '.placeCursor(vp, Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }, ' + Math.round(num(w.fontSize, 24)) + ', in.pos().x);');
-    });
-    i8('}');
-    visibleInputs.forEach(w => { i8(w._var + '.update(in);'); });
-    a('');
-  }
-  if (clickButtons.length) {
-    i8('// 按钮点击（后画的优先）');
-    i8('if (in.clicked() && inArea)');
-    i8('{');
-    clickButtons.slice().reverse().forEach(w => {
-      i12('if (Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }.contains(m)) { onClick(' + w._id + '); return; }');
-    });
-    i8('}');
-  }
+  i8('switch (g_page)');
+  i8('{');
+  pages.forEach(pg => {
+    i8('case ' + pg._cppId + ':');
+    i8('    updatePage' + pg._index + '(in, vp);');
+    i8('    break;');
+  });
+  i8('default:');
+  i8('    break;');
+  i8('}');
   i4('}');
   a('');
 
-  // draw
+  pages.forEach(pg => {
+    i4('static void drawPage' + pg._index + '(const Viewport& vp, const Input& in)');
+    i4('{');
+    i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
+    i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
+    let usedM = false;
+    let wrote = false;
+    pg.widgets.forEach(w => {
+      if (w.visible === false) return;
+      wrote = true;
+      const R = 'Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }';
+      if (w.type === 'panel') {
+        i8('// 面板');
+        i8('fillRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + rgbExpr(w.fillColor) + ');');
+        if (Number(w.borderWidth || 0) > 0)
+          i8('frameRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + Math.round(num(w.borderWidth, 0)) + ', ' + rgbExpr(w.borderColor) + ');');
+        a('');
+      } else if (w.type === 'label') {
+        i8('// 文字');
+        i8('vp.textIn(' + R + ', ' + cppString(String(w.text || '').replace(/\r?\n/g, ' ')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.color) + ', ' + alignExpr(w.align) + ');');
+        a('');
+      } else if (w.type === 'image') {
+        if (!String(w.path || '').trim()) {
+          i8('// 图片未设置路径，跳过');
+          a('');
+          return;
+        }
+        i8('// 图片');
+        if (w.fit === 'cover') i8('vp.imageCover(' + w._var + ', ' + R + ');');
+        else if (w.fit === 'stretch') i8('vp.image(' + w._var + ', ' + R + ');');
+        else i8('vp.imageFit(' + w._var + ', ' + R + ');');
+        a('');
+      } else if (w.type === 'button') {
+        if (w.enabled !== false) usedM = true;
+        const radius = Math.round(num(w.radius, 0));
+        const bw = Math.round(num(w.borderWidth, 0));
+        i8('// 按钮：' + String(w.text || w.id || ''));
+        i8('{');
+        i12('const Rect r{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' };');
+        if (w.enabled === false) {
+          i12('fillRound(r, ' + radius + ', ' + rgbExpr(w.disabledBg || '#262a33') + ');');
+          if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
+        } else {
+          i12('const bool hover = r.contains(m);');
+          i12('fillRound(r, ' + radius + ', hover ? ' + rgbExpr(w.hoverBg) + ' : ' + rgbExpr(w.normalBg) + ');');
+          if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
+        }
+        const textColor = w.enabled === false ? (w.disabledText || '#777d8a') : (w.textColor || '#eef2ff');
+        if (w._iconVar) {
+          const is = Math.max(8, Math.min(Math.round(num(w.iconSize, 40)), Math.max(8, w.w - 24), Math.max(8, w.h - 24)));
+          const gap = Math.max(0, Math.round(num(w.iconGap, 10)));
+          if (w.iconPos === 'top') {
+            i12('const int is = ' + is + ', gap = ' + gap + ';');
+            i12('vp.imageFit(' + w._iconVar + ', Rect{ r.x + (r.w - is) / 2, r.y + 8, is, is });');
+            i12('vp.textIn(Rect{ r.x + 8, r.y + 8 + is + gap, r.w - 16, ' + Math.max(1, w.h - (is + gap + 16)) + ' }, ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(textColor) + ', Align::Center);');
+          } else if (w.iconPos === 'right') {
+            i12('const int is = ' + is + ', gap = ' + gap + ';');
+            i12('vp.imageFit(' + w._iconVar + ', Rect{ r.right() - 12 - is, r.y + (r.h - is) / 2, is, is });');
+            i12('vp.textIn(Rect{ r.x + 12, r.y, ' + Math.max(1, w.w - (is + gap + 24)) + ', r.h }, ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(textColor) + ', Align::Center);');
+          } else {
+            i12('const int is = ' + is + ', gap = ' + gap + ';');
+            i12('vp.imageFit(' + w._iconVar + ', Rect{ r.x + 12, r.y + (r.h - is) / 2, is, is });');
+            i12('vp.textIn(Rect{ r.x + 12 + is + gap, r.y, ' + Math.max(1, w.w - (is + gap + 24)) + ', r.h }, ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(textColor) + ', Align::Center);');
+          }
+        } else {
+          i12('vp.textIn(r, ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(textColor) + ', Align::Center);');
+        }
+        i8('}');
+        a('');
+      } else if (w.type === 'input') {
+        const radius = Math.round(num(w.radius, 0));
+        const bw = Math.round(num(w.borderWidth, 0));
+        i8('// 输入框：' + String(w.id || ''));
+        i8('{');
+        i12('const Rect r{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' };');
+        i12('fillRound(r, ' + radius + ', ' + rgbExpr(w.inputBg) + ');');
+        if (bw > 0) {
+          i12('frameRound(r, ' + radius + ', ' + bw + ', ' + w._var + '.focused ? ' + rgbExpr(w.focusBorderColor) + ' : ' + rgbExpr(w.borderColor) + ');');
+        }
+        if (String(w.placeholder || '').length) {
+          i12('if (' + w._var + '.text.empty())');
+          i12('    vp.textIn(r.inset(12), ' + cppString(w.placeholder) + ', ' + Math.round(num(w.fontSize, 24)) + ', ' + rgbExpr(w.placeholderColor) + ', Align::Left);');
+        }
+        i12(w._var + '.draw(vp, r, ' + Math.round(num(w.fontSize, 24)) + ', ' + rgbExpr(w.textColor) + ', caretOn());');
+        i8('}');
+        a('');
+      }
+    });
+    if (!wrote) i8('// 没有可见控件');
+    if (!usedM) i8('(void)m;');
+    i4('}');
+    a('');
+  });
+
   i4('void draw(const Viewport& vp, const Input& in)');
   i4('{');
-  i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
-  i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
-  let usedM = false;
-  let wroteDraw = false;
-  widgets.forEach(w => {
-    if (w.visible === false) return;
-    wroteDraw = true;
-    const R = 'Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }';
-    if (w.type === 'panel') {
-      i8('// 面板');
-      i8('fillRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + rgbExpr(w.fillColor) + ');');
-      if (Number(w.borderWidth || 0) > 0)
-        i8('frameRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + Math.round(num(w.borderWidth, 0)) + ', ' + rgbExpr(w.borderColor) + ');');
-      a('');
-    } else if (w.type === 'label') {
-      i8('// 文字');
-      i8('vp.textIn(' + R + ', ' + cppString(String(w.text || '').replace(/\r?\n/g, ' ')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.color) + ', ' + alignExpr(w.align) + ');');
-      a('');
-    } else if (w.type === 'image') {
-      if (!String(w.path || '').trim()) {
-        i8('// 图片未设置路径，跳过');
-        a('');
-        return;
-      }
-      i8('// 图片');
-      if (w.fit === 'cover') i8('vp.imageCover(' + w._var + ', ' + R + ');');
-      else if (w.fit === 'stretch') i8('vp.image(' + w._var + ', ' + R + ');');
-      else i8('vp.imageFit(' + w._var + ', ' + R + ');');
-      a('');
-    } else if (w.type === 'button') {
-      usedM = true;
-      const radius = Math.round(num(w.radius, 0));
-      const bw = Math.round(num(w.borderWidth, 0));
-      if (w.enabled === false) {
-        i8('// 按钮：' + String(w.text || w.id || ''));
-        i8('{');
-        i12('fillRound(' + R + ', ' + radius + ', ' + rgbExpr(w.disabledBg || '#262a33') + ');');
-        if (bw > 0) i12('frameRound(' + R + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
-        i12('vp.textIn(' + R + ', ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.disabledText || '#777d8a') + ', Align::Center);');
-        i8('}');
-      } else {
-        i8('// 按钮：' + String(w.text || w.id || ''));
-        i8('{');
-        i12('const bool hover = ' + R + '.contains(m);');
-        i12('fillRound(' + R + ', ' + radius + ', hover ? ' + rgbExpr(w.hoverBg) + ' : ' + rgbExpr(w.normalBg) + ');');
-        if (bw > 0) i12('frameRound(' + R + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
-        i12('vp.textIn(' + R + ', ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.textColor) + ', Align::Center);');
-        i8('}');
-      }
-      a('');
-    } else if (w.type === 'input') {
-      const radius = Math.round(num(w.radius, 0));
-      const bw = Math.round(num(w.borderWidth, 0));
-      i8('// 输入框：' + String(w.id || ''));
-      i8('fillRound(' + R + ', ' + radius + ', ' + rgbExpr(w.inputBg) + ');');
-      if (bw > 0) {
-        i8('frameRound(' + R + ', ' + radius + ', ' + bw + ', ' + w._var + '.focused ? ' + rgbExpr(w.focusBorderColor) + ' : ' + rgbExpr(w.borderColor) + ');');
-      }
-      if (String(w.placeholder || '').length)
-        i8('if (' + w._var + '.text.empty())');
-      if (String(w.placeholder || '').length)
-        i12('vp.textIn(' + R + '.inset(12), ' + cppString(w.placeholder) + ', ' + Math.round(num(w.fontSize, 24)) + ', ' + rgbExpr(w.placeholderColor) + ', Align::Left);');
-      i8(w._var + '.draw(vp, ' + R + ', ' + Math.round(num(w.fontSize, 24)) + ', ' + rgbExpr(w.textColor) + ', caretOn());');
-      a('');
-    }
-  });
-  if (!wroteDraw) i8('// 没有可见控件');
-  if (!usedM && !clickButtons.length && !inputs.length) {
-    // m 可能只用于按钮 hover；如果没有任何按钮，标签/输入框不使用 m
-    // 统一加 void 避免 /W4 警告
+  i8('vp.fill(Rect{ 0, 0, ' + W + ', ' + H + ' }, ' + rgbExpr(p.bg || '#12141c') + ');');
+  if (bgImage) {
+    if (p.bgFit === 'cover') i8('vp.imageCover(g_bg, Rect{ 0, 0, ' + W + ', ' + H + ' });');
+    else if (p.bgFit === 'stretch') i8('vp.image(g_bg, Rect{ 0, 0, ' + W + ', ' + H + ' });');
+    else i8('vp.imageFit(g_bg, Rect{ 0, 0, ' + W + ', ' + H + ' });');
   }
-  if (!usedM) i8('(void)m;');
+  i8('switch (g_page)');
+  i8('{');
+  pages.forEach(pg => {
+    i8('case ' + pg._cppId + ':');
+    i8('    drawPage' + pg._index + '(vp, in);');
+    i8('    break;');
+  });
+  i8('default:');
+  i8('    break;');
+  i8('}');
   i4('}');
   a('');
   a('} // namespace ui');
@@ -1207,10 +1583,10 @@ function generateCode(p) {
   a('//   ui::init();');
   a('//   ui::update(in, vp);');
   a('//   ui::draw(vp, in);');
+  a('//   ui::goPage(UI_PAGE_MAIN);  // 切页面');
 
   return L.join('\n') + '\n';
 }
-
 /* ------------------------------- 代码弹窗 ------------------------------- */
 function openCode() {
   generatedCode = generateCode(project);
@@ -1236,6 +1612,7 @@ async function copyCode() {
 function renderAll() {
   $('#projectName').value = project.name || '';
   $('#gridSize').textContent = project.grid;
+  renderPageTabs();
   renderStage();
   renderLayers();
   renderProps();
@@ -1302,6 +1679,18 @@ function init() {
   // 添加
   $$('.pal-btn').forEach(b => b.addEventListener('click', () => addWidget(b.dataset.add)));
 
+  // 页面标签
+  $('#pageTabs').addEventListener('click', e => {
+    const close = e.target.closest('[data-close]');
+    if (close) { deletePage(Number(close.dataset.close)); return; }
+    const tab = e.target.closest('.page-tab[data-index]');
+    if (tab) switchPage(Number(tab.dataset.index));
+  });
+  $('#pageTabs').addEventListener('dblclick', e => {
+    const tab = e.target.closest('.page-tab[data-index]');
+    if (tab) renamePage(Number(tab.dataset.index));
+  });
+
   // 图层
   $('#layers').addEventListener('click', e => {
     const row = e.target.closest('.layer');
@@ -1342,12 +1731,22 @@ function init() {
   // 属性
   $('#props').addEventListener('input', onPropInput);
   $('#props').addEventListener('change', e => {
-    if (e.target.dataset.file === 'preview') {
-      const w = selected();
+    const fileKind = e.target.dataset.file;
+    if (fileKind) {
       const f = e.target.files[0];
-      if (!w || !f) return;
+      if (!f) return;
       const r = new FileReader();
-      r.onload = () => { w.previewData = r.result; renderStage(); };
+      if (fileKind === 'bg') {
+        r.onload = () => { project.bgPreviewData = r.result; renderStage(); };
+      } else {
+        const w = selected();
+        if (!w) return;
+        r.onload = () => {
+          if (fileKind === 'icon') w.iconPreviewData = r.result;
+          else w.previewData = r.result;
+          renderStage();
+        };
+      }
       r.readAsDataURL(f);
       return;
     }
@@ -1357,14 +1756,18 @@ function init() {
     const action = e.target.dataset.action;
     if (!action) return;
     const w = selected();
+    if (action === 'add-page') { addPage(); return; }
     if (action === 'load-sample') { loadProject(sampleProject()); return; }
     if (action === 'clear-all') {
       if (!confirm('清空所有控件？')) return;
-      historyForce(); project.widgets = []; selectedUid = null; renderAll(); return;
+      historyForce(); project.widgets.length = 0; selectedUid = null; renderAll(); return;
     }
     if (!w) return;
     if (action === 'del') deleteSelected();
     else if (action === 'dup') duplicateSelected();
+    else if (action === 'center-h') { historyForce(); w.centerH = true; applyCentering(w); renderStage(); renderSelection(); syncPosFields(); saveLocal(); }
+    else if (action === 'center-v') { historyForce(); w.centerV = true; applyCentering(w); renderStage(); renderSelection(); syncPosFields(); saveLocal(); }
+    else if (action === 'center') { historyForce(); w.centerH = true; w.centerV = true; applyCentering(w); renderStage(); renderSelection(); syncPosFields(); saveLocal(); }
     else if (action === 'up') moveLayer(w.uid, 1);
     else if (action === 'down') moveLayer(w.uid, -1);
     else if (action === 'top') { historyForce(); const i = project.widgets.indexOf(w); project.widgets.splice(i, 1); project.widgets.push(w); renderAll(); }
@@ -1416,11 +1819,19 @@ function init() {
 
   renderAll();
 
-  // 调试用：?select=BTN_START 打开时自动选中某个控件
-  const selParam = new URLSearchParams(location.search).get('select');
+  // 调试用：?page=1 打开指定页面；?select=BTN_START 自动选中控件
+  const pageParam = Number(params.get('page'));
+  if (Number.isInteger(pageParam) && pageParam >= 0) switchPage(pageParam);
+  const selParam = params.get('select');
   if (selParam) {
     const w = project.widgets.find(x => String(x.id || '') === selParam);
     if (w) select(w.uid);
+  }
+
+  // 测试用：?dumpjson=1 输出当前工程 JSON
+  if (params.has('dumpjson')) {
+    document.body.innerHTML = '<pre id="dumpjson">' + escHtml(JSON.stringify(serializeProject(), null, 2)) + '</pre>';
+    return;
   }
 
   // 测试用：?selftest=1 跑一组核心交互断言
@@ -1432,15 +1843,22 @@ function init() {
     ok('normalize 保留 x', np.widgets[0].x === 123 && np.widgets[0].w === 100);
 
     const code = generateCode(sampleProject());
-    ok('生成 enum', code.includes('UI_BTN_START'));
+    ok('生成 enum', code.includes('UI_MAIN_BTN_START'));
     ok('生成输入框光标', code.includes('placeCursor'));
-    ok('每个按钮独立 hover 作用域', (code.match(/const bool hover/g) || []).length === 3);
+    ok('每个按钮独立 hover 作用域', (code.match(/const bool hover/g) || []).length >= 3);
+    ok('生成页面枚举', code.includes('UI_PAGE_SETTINGS'));
+    ok('生成页面跳转', code.includes('goPage(UI_PAGE_SETTINGS)'));
 
     const beforeCount = project.widgets.length;
     addWidget('label');
     ok('添加控件', project.widgets.length === beforeCount + 1);
 
     const testW = project.widgets[project.widgets.length - 1];
+    testW.centerH = true;
+    testW.centerV = true;
+    applyCentering(testW);
+    ok('自动居中', testW.x === Math.round((project.designW - testW.w) / 2) &&
+      testW.y === Math.round((project.designH - testW.h) / 2));
     select(testW.uid);
     const el = document.querySelector('.widget[data-uid="' + testW.uid + '"]');
     if (el) {
@@ -1466,6 +1884,12 @@ function init() {
     } else {
       ok('缩放改变宽高', false);
     }
+
+    const beforePages = project.pages.length;
+    addPage();
+    ok('新增页面', project.pages.length === beforePages + 1);
+    switchPage(0);
+    ok('切换页面', project.activePage === 0);
 
     const body = results.join('\n');
     document.body.innerHTML = '<pre id="selftest">' + escHtml(body) + '</pre>';
