@@ -88,6 +88,21 @@ static Rect pctRect(const Viewport& vp, float x, float y, float w, float h)
 
 ![预览输入框](editor_preview_input.png)
 
+## 等分参考线（横/竖任意数值）
+
+底部状态栏和「项目」面板都有：
+
+- **列数**：任意整数，画竖线；
+- **行数**：任意整数，画横线；
+- **显示等分线**：打开/关闭；
+- **吸附等分线**：拖动控件时，控件左/中/右边缘会吸附到等分线和画面中心线。
+
+例如 5 列 4 行：
+
+![等分参考线](editor_guides.png)
+
+等分线只用于编辑器排版，不会出现在生成代码里。
+
 ## 页面（跳转）
 
 画布上方的标签就是页面：
@@ -155,6 +170,56 @@ vp.imageCover(g_bg, pctRect(vp, 0, 0, 1, 1));
 `init()` 里会自动 `g_bg.load(assetPath("res/bg.png"));`。
 
 > 编辑器里如果没选「背景预览」，画布只显示背景色；生成代码仍然会用路径加载真实图片。
+
+## 伸缩菜单
+
+左侧「伸缩菜单」添加一个可展开/收起的菜单：
+
+- 「标题」：菜单按钮上显示的文字；
+- 「菜单项」：一行一个，例如：
+  ```
+  回到主页
+  音量
+  关于
+  ```
+- 「按钮高度」「菜单项高度」；
+- 「默认展开」：生成代码初始是展开还是收起；
+- 颜色、边框、圆角都可以调；
+- 高度会根据菜单项数量自动计算，只需要调宽度。
+
+预览里：
+
+- 点菜单标题 → 展开/收起；
+- 菜单展开后，点菜单项 → 左下角日志显示对应生成的 `onMenu_..._ItemN()` 回调。
+
+生成代码：
+
+```cpp
+static bool g_p1_menu_1_open = false;
+
+static void onMenu_SETTINGS_MENU_MAIN_Toggle()
+{
+    // 菜单已经自动展开/收起；这里写额外逻辑（可留空）
+}
+
+static void onMenu_SETTINGS_MENU_MAIN_Item1()
+{
+    // TODO: 菜单项“回到主页”的逻辑
+}
+
+static void onMenu_SETTINGS_MENU_MAIN_Item2()
+{
+    // TODO: 菜单项“音量”的逻辑
+}
+```
+
+菜单项要跳页面，就在对应函数里写：
+
+```cpp
+goPage(UI_PAGE_MAIN);
+```
+
+![伸缩菜单](editor_preview_menu.png)
 
 ## 控件背景图（按钮 / 面板 / 文本输入）
 
@@ -370,6 +435,35 @@ static void onButtonClick(UiId id)
 ui::goPage(UI_PAGE_SETTINGS);
 ```
 
+#### 其他常见逻辑示例
+
+```cpp
+// 退出游戏（EasyX 窗口程序）
+PostQuitMessage(0);
+
+// 改游戏状态（自己定义的全局/成员变量）
+g_gameState = GameState::Playing;
+
+// 播放音效（自己封装的函数）
+playSound("res/click.wav");
+
+// 保存设置
+saveSettings();
+
+// 打开一个 MessageBox
+MessageBoxA(GetHWnd(), "提示", "按钮被点击了", MB_OK);
+
+// 菜单项里跳页面
+goPage(UI_PAGE_MAIN);
+```
+
+这些代码可以直接写在：
+
+1. 编辑器的「按钮逻辑」输入框里（会生成到对应回调）；或
+2. 生成后的 `ui_generated.cpp` 里对应 `onButton_xxx()` / `onMenu_xxx_ItemN()` 函数。
+
+> 回调函数是 `static` 的，调用项目里的其他函数时，确保它们已经在上面声明/定义，或者自己加前置声明。
+
 ## 保存格式
 
 保存的 `.json` 包含所有页面；可以提交到 git、发给别人；编辑器启动时会自动从浏览器 `localStorage` 恢复上次编辑。
@@ -397,5 +491,7 @@ editor/
 ├─ editor_selected.png     选中按钮时的属性面板截图
 ├─ editor_page2.png        第二页（页面跳转）截图
 ├─ editor_preview_mode.png 预览模式（按钮跳转 + 日志）截图
-└─ editor_preview_input.png 预览模式（文本输入框）截图
+├─ editor_preview_input.png 预览模式（文本输入框）截图
+├─ editor_guides.png       等分参考线截图
+└─ editor_preview_menu.png 预览模式（伸缩菜单）截图
 ```

@@ -104,6 +104,9 @@
     object-fit:cover; display:none; pointer-events:none;
   }
   #grid{position:absolute; inset:0; pointer-events:none; opacity:.7}
+  #guides{position:absolute; inset:0; pointer-events:none; display:none; z-index:1}
+  #guides .gv{position:absolute; top:0; bottom:0; width:1px; background:rgba(255,183,77,.45)}
+  #guides .gh{position:absolute; left:0; right:0; height:1px; background:rgba(255,183,77,.45)}
   #widgets{position:absolute; inset:0}
   .widget{position:absolute; user-select:none; cursor:move; overflow:hidden}
   .widget-bg{position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; z-index:0}
@@ -116,6 +119,13 @@
   .w-image{display:flex; align-items:center; justify-content:center; background:#0b0e14; color:#5b6b86; overflow:hidden}
   .w-image img{width:100%; height:100%; display:block}
   .w-input{display:flex; align-items:center; overflow:hidden; white-space:nowrap}
+  .w-menu{background:transparent !important}
+  .menu-header,.menu-item{
+    display:flex; align-items:center; width:100%; box-sizing:border-box;
+    padding:0 14px; white-space:nowrap; overflow:hidden; cursor:pointer;
+  }
+  .menu-header{justify-content:space-between}
+  .menu-item{padding-left:26px}
   .w-input .ph{opacity:.65}
   .w-input.preview-input input::placeholder{color:var(--ph); opacity:1}
   #selection{position:absolute; pointer-events:none; z-index:99; display:none}
@@ -192,7 +202,7 @@
   body.preview .topbar,body.preview aside,body.preview .statusbar,body.preview .page-tabs{display:none}
   body.preview main{height:100%; grid-template-columns:1fr}
   body.preview #stageWrap{padding:0}
-  body.preview #grid{display:none}
+  body.preview #grid,body.preview #guides{display:none}
   #previewExit{
     position:fixed; right:16px; top:16px; z-index:400; display:none;
     background:rgba(20,26,38,.9); border:1px solid var(--line); color:var(--text);
@@ -246,6 +256,7 @@
       <button class="pal-btn" data-add="panel"><b>▦</b><small>面板</small></button>
       <button class="pal-btn" data-add="image"><b>◫</b><small>图片</small></button>
       <button class="pal-btn" data-add="input"><b>⌨</b><small>文本输入</small></button>
+      <button class="pal-btn" data-add="menu"><b>☰</b><small>伸缩菜单</small></button>
     </div>
     <h3>图层 <span id="layerCount" style="color:var(--muted)"></span></h3>
     <div id="layers"></div>
@@ -258,6 +269,7 @@
         <div id="stage">
           <img id="stageBg" alt="">
           <div id="grid"></div>
+          <div id="guides"></div>
           <div id="widgets"></div>
           <div id="selection">
             <div class="box"></div>
@@ -276,6 +288,10 @@
     <div class="statusbar">
       <label><input type="checkbox" id="snapChk" checked> 网格吸附</label>
       <span>网格 <b id="gridSize">8</b> px</span>
+      <span>等分 列 <input type="number" id="guideCols" min="1" max="64" value="4" style="width:46px"></span>
+      <span>行 <input type="number" id="guideRows" min="1" max="64" value="3" style="width:46px"></span>
+      <label><input type="checkbox" id="guideChk"> 等分线</label>
+      <label><input type="checkbox" id="guideSnapChk" checked> 吸附等分线</label>
       <span>缩放
         <select id="zoomSel">
           <option value="fit">适应</option>
@@ -341,6 +357,7 @@ let generatedCode = '';
 let uidSeq = 1;
 let previewReturnPage = -1;
 let previewInputValues = {};
+let previewMenuOpen = {};
 
 /* ------------------------------- 工具 ------------------------------- */
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -397,8 +414,8 @@ function alignExpr(a) {
 }
 
 /* ------------------------------- 数据 ------------------------------- */
-const TYPE_LABEL = { button: '按钮', label: '文字', panel: '面板', image: '图片', input: '文本输入' };
-const TYPE_ICON = { button: '▭', label: 'T', panel: '▦', image: '◫', input: '⌨' };
+const TYPE_LABEL = { button: '按钮', label: '文字', panel: '面板', image: '图片', input: '文本输入', menu: '伸缩菜单' };
+const TYPE_ICON = { button: '▭', label: 'T', panel: '▦', image: '◫', input: '⌨', menu: '☰' };
 
 function defaults(type) {
   const base = {
@@ -435,6 +452,17 @@ function defaults(type) {
     placeholderColor: '#7c8aa5', radius: 8, borderWidth: 2,
     bgImage: '', bgPreviewData: ''
   });
+  if (type === 'menu') return Object.assign(base, {
+    w: 280, h: 200, text: '菜单', fontSize: 26,
+    headerHeight: 52, itemHeight: 44,
+    itemFontSize: 24,
+    items: ['开始游戏', '设置', '退出'],
+    defaultOpen: false,
+    headerBg: '#222a3e', headerHoverBg: '#3e5684',
+    itemBg: '#1a2030', itemHoverBg: '#2a3a56',
+    textColor: '#eef2ff', borderColor: '#5c7cc4',
+    borderWidth: 2, radius: 8
+  });
   return base;
 }
 
@@ -444,6 +472,10 @@ function makeWidget(type, x, y) {
   w.y = Math.round(y);
   if (type === 'button') w.id = uniqueId('BTN');
   if (type === 'input') w.id = uniqueId('INPUT');
+  if (type === 'menu') {
+    w.id = uniqueId('MENU');
+    w.h = w.headerHeight + w.items.length * w.itemHeight;
+  }
   return w;
 }
 
@@ -469,6 +501,13 @@ function normalizeWidgets(list) {
     w.h = Math.max(8, Math.round(num(w.h, 40)));
     if (w.type === 'button' && !w.id) w.id = 'BTN_' + (i + 1);
     if (w.type === 'input' && !w.id) w.id = 'INPUT_' + (i + 1);
+    if (w.type === 'menu') {
+      if (!w.id) w.id = 'MENU_' + (i + 1);
+      w.items = Array.isArray(w.items) ? w.items.map(x => String(x).trim()).filter(Boolean) : [];
+      w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
+      w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
+      w.h = w.headerHeight + w.items.length * w.itemHeight;
+    }
   });
   return arr;
 }
@@ -478,12 +517,16 @@ function normalizeProject(p) {
     version: 1, name: '未命名界面',
     designW: W_DEFAULT, designH: H_DEFAULT,
     bg: '#12141c', bgImage: '', bgFit: 'cover', bgPreviewData: '',
-    layout: 'percent', grid: 8, pages: null, activePage: 0,
-    widgets: []
+    layout: 'percent', grid: 8, guideCols: 4, guideRows: 3, showGuides: false, snapGuides: true,
+    pages: null, activePage: 0, widgets: []
   }, p || {});
   out.designW = clamp(num(out.designW, W_DEFAULT), 320, 3840);
   out.designH = clamp(num(out.designH, H_DEFAULT), 240, 2160);
   out.grid = clamp(num(out.grid, 8), 2, 64);
+  out.guideCols = clamp(Math.round(num(out.guideCols, 4)), 1, 64);
+  out.guideRows = clamp(Math.round(num(out.guideRows, 3)), 1, 64);
+  out.showGuides = !!out.showGuides;
+  out.snapGuides = out.snapGuides !== false;
 
   let pages = Array.isArray(out.pages) && out.pages.length ? out.pages : null;
   if (!pages) {
@@ -531,6 +574,7 @@ function sampleProject() {
       {
         key: 'p2', id: 'SETTINGS', name: '设置页',
         widgets: [
+          { type: 'menu', id: 'MENU_MAIN', x: 60, y: 60, w: 220, text: '菜单', items: ['回到主页', '音量', '关于'], defaultOpen: false },
           { type: 'panel', x: 390, y: 100, w: 500, h: 520, fillColor: '#1a2030', borderColor: '#3a4a6a', borderWidth: 2, radius: 12, bgImage: 'res/bg.png' },
           { type: 'label', x: 390, y: 140, w: 500, h: 70, text: '设置', fontSize: 44, color: '#f2f6ff', align: 'center' },
           { type: 'button', id: 'BTN_BACK', x: 480, y: 500, w: 320, h: 60, text: '返回', fontSize: 28, target: 'p1', iconPath: 'res/logo.png', iconSize: 36, iconGap: 8, iconPos: 'left' }
@@ -732,6 +776,7 @@ function addPreviewLog(text) {
 function enterPreview() {
   previewReturnPage = project.activePage;
   previewInputValues = {};
+  previewMenuOpen = {};
   document.body.classList.add('preview');
   const box = $('#previewLog');
   if (box) box.innerHTML = '';
@@ -743,6 +788,7 @@ function enterPreview() {
 function exitPreview() {
   document.body.classList.remove('preview');
   previewInputValues = {};
+  previewMenuOpen = {};
   const box = $('#previewLog');
   if (box) box.innerHTML = '';
   if (previewReturnPage >= 0 && previewReturnPage !== project.activePage) {
@@ -795,6 +841,26 @@ function prependWidgetBg(el, w) {
   el.insertBefore(img, el.firstChild);
 }
 
+function renderGuides() {
+  const box = $('#guides');
+  if (!box) return;
+  box.innerHTML = '';
+  box.style.display = project.showGuides ? 'block' : 'none';
+  if (!project.showGuides) return;
+  for (let i = 1; i < project.guideCols; i++) {
+    const d = document.createElement('div');
+    d.className = 'gv';
+    d.style.left = (i / project.guideCols * 100) + '%';
+    box.appendChild(d);
+  }
+  for (let i = 1; i < project.guideRows; i++) {
+    const d = document.createElement('div');
+    d.className = 'gh';
+    d.style.top = (i / project.guideRows * 100) + '%';
+    box.appendChild(d);
+  }
+}
+
 function renderStage() {
   const stage = $('#stage');
   stage.style.width = project.designW + 'px';
@@ -812,6 +878,7 @@ function renderStage() {
   const grid = $('#grid');
   grid.style.backgroundImage = gridCss(project.grid);
   grid.style.backgroundSize = `${project.grid}px ${project.grid}px`;
+  renderGuides();
 
   const box = $('#widgets');
   box.innerHTML = '';
@@ -823,7 +890,7 @@ function renderStage() {
       left: w.x + 'px', top: w.y + 'px', width: w.w + 'px', height: w.h + 'px',
       borderRadius: (w.radius || 0) + 'px'
     });
-    if (w.borderWidth) {
+    if (w.borderWidth && w.type !== 'menu') {
       el.style.border = `${w.borderWidth}px solid ${w.borderColor || '#555'}`;
     }
     if (w.type === 'button') {
@@ -884,6 +951,49 @@ function renderStage() {
         el.style.fontSize = '12px';
         el.style.padding = '6px';
         el.style.textAlign = 'center';
+      }
+    } else if (w.type === 'menu') {
+      el.style.background = 'transparent';
+      el.style.overflow = 'visible';
+      const isPreview = document.body.classList.contains('preview');
+      if (isPreview && !(w.uid in previewMenuOpen)) previewMenuOpen[w.uid] = !!w.defaultOpen;
+      const open = isPreview ? !!previewMenuOpen[w.uid] : true;
+      const header = document.createElement('div');
+      header.className = 'menu-header';
+      header.dataset.menuPart = 'header';
+      header.style.height = (w.headerHeight || 52) + 'px';
+      header.style.background = w.headerBg || '#222a3e';
+      header.style.border = (w.borderWidth || 0) + 'px solid ' + (w.borderColor || '#5c7cc4');
+      header.style.borderRadius = (w.radius || 0) + 'px';
+      header.style.color = w.textColor || '#eef2ff';
+      header.style.fontSize = (w.fontSize || 26) + 'px';
+      const title = document.createElement('span');
+      title.textContent = w.text || '菜单';
+      const arrow = document.createElement('span');
+      arrow.textContent = open ? '▴' : '▾';
+      arrow.style.opacity = '.75';
+      header.appendChild(title);
+      header.appendChild(arrow);
+      header.addEventListener('mouseenter', () => { header.style.background = w.headerHoverBg || w.headerBg; });
+      header.addEventListener('mouseleave', () => { header.style.background = w.headerBg || '#222a3e'; });
+      el.appendChild(header);
+      if (open) {
+        (w.items || []).forEach((text, i) => {
+          const item = document.createElement('div');
+          item.className = 'menu-item';
+          item.dataset.menuPart = 'item';
+          item.dataset.index = i;
+          item.style.height = (w.itemHeight || 44) + 'px';
+          item.style.background = w.itemBg || '#1a2030';
+          item.style.border = (w.borderWidth || 0) + 'px solid ' + (w.borderColor || '#5c7cc4');
+          item.style.borderRadius = (w.radius || 0) + 'px';
+          item.style.color = w.textColor || '#eef2ff';
+          item.style.fontSize = (w.itemFontSize || 24) + 'px';
+          item.textContent = text;
+          item.addEventListener('mouseenter', () => { item.style.background = w.itemHoverBg || w.itemBg; });
+          item.addEventListener('mouseleave', () => { item.style.background = w.itemBg || '#1a2030'; });
+          el.appendChild(item);
+        });
       }
     } else if (w.type === 'input') {
       el.style.background = w.inputBg || '#181e2c';
@@ -1063,6 +1173,16 @@ function renderProps() {
       </div>
       <div class="hint">背景图路径相对 exe，例如 res/bg.png；预览图只用于编辑器。</div>
       ${numberField('网格', 'grid', project.grid, 2, 64)}
+      <h3 style="margin-top:14px">等分参考线</h3>
+      <div class="row2">
+        ${numberField('横向列数', 'guideCols', project.guideCols, 1, 64)}
+        ${numberField('纵向行数', 'guideRows', project.guideRows, 1, 64)}
+      </div>
+      <div class="field"><label>显示/吸附</label><div class="chk">
+        <label><input type="checkbox" data-prop="showGuides" ${project.showGuides ? 'checked' : ''}> 显示等分线</label>
+        <label><input type="checkbox" data-prop="snapGuides" ${project.snapGuides ? 'checked' : ''}> 吸附</label>
+      </div></div>
+      <div class="hint">列/行可以填任意整数；打开后拖动控件会吸附到等分线和中心线。</div>
       <h3 style="margin-top:14px">当前页面</h3>
       ${inputField('页面名称', 'pageName', project.pages[project.activePage].name)}
       ${inputField('页面 ID', 'pageId', project.pages[project.activePage].id)}
@@ -1093,7 +1213,9 @@ function renderProps() {
       ${numberField('X', 'x', w.x)}
       ${numberField('Y', 'y', w.y)}
       ${numberField('宽', 'w', w.w, 8)}
-      ${numberField('高', 'h', w.h, 8)}
+      ${w.type === 'menu'
+        ? `<div class="field"><label>高（自动）</label><input type="number" value="${w.h}" disabled></div>`
+        : numberField('高', 'h', w.h, 8)}
     </div>`;
   const pct = (v, base) => (v / base * 100).toFixed(1);
   html += `<div class="hint">占屏幕：X ${pct(w.x, project.designW)}% · Y ${pct(w.y, project.designH)}% · 宽 ${pct(w.w, project.designW)}% · 高 ${pct(w.h, project.designH)}%</div>`;
@@ -1186,6 +1308,31 @@ function renderProps() {
     html += numberField('圆角', 'radius', w.radius, 0, 80);
     html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
     html += bgImageFields(w);
+  } else if (w.type === 'menu') {
+    html += inputField('C++ ID', 'id', w.id || '');
+    html += `<div class="hint">生成的菜单项回调：<code>onMenu_${escHtml(cppIdent(w.id, 'MENU_1'))}_Item1()</code> …</div>`;
+    html += inputField('标题', 'text', w.text);
+    html += numberField('标题字号', 'fontSize', w.fontSize, 8, 200);
+    html += numberField('菜单项字号', 'itemFontSize', w.itemFontSize, 8, 200);
+    html += `<div class="row2">
+      ${numberField('按钮高度', 'headerHeight', w.headerHeight, 24, 200)}
+      ${numberField('菜单项高度', 'itemHeight', w.itemHeight, 20, 160)}
+    </div>`;
+    html += `<div class="field"><label>菜单项</label></div>
+      <div class="hint">一行一个菜单项，生成 <code>Item1/Item2/...</code> 回调。</div>
+      <textarea data-prop="itemsText" spellcheck="false">${escHtml((w.items || []).join('\n'))}</textarea>`;
+    html += `<div class="field"><label>默认展开</label><div class="chk">
+      <label><input type="checkbox" data-prop="defaultOpen" ${w.defaultOpen ? 'checked' : ''}> 打开时展开</label>
+    </div></div>`;
+    html += colorField('按钮底色', 'headerBg', w.headerBg);
+    html += colorField('按钮悬停色', 'headerHoverBg', w.headerHoverBg);
+    html += colorField('菜单项底色', 'itemBg', w.itemBg);
+    html += colorField('菜单项悬停色', 'itemHoverBg', w.itemHoverBg);
+    html += colorField('文字颜色', 'textColor', w.textColor);
+    html += colorField('边框颜色', 'borderColor', w.borderColor);
+    html += numberField('圆角', 'radius', w.radius, 0, 80);
+    html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
+    html += `<div class="hint">菜单展开/收起、菜单项点击逻辑都在生成的 onMenu_... 回调里；预览里点菜单按钮可展开。</div>`;
   }
 
   html += `<div class="actions-row">
@@ -1211,6 +1358,26 @@ function stageScale() {
 function snapVal(v) {
   return snap ? Math.round(v / project.grid) * project.grid : Math.round(v);
 }
+function snapAxis(v, size, divisions, axisSize) {
+  let out = snapVal(v);
+  if (!project.showGuides || !project.snapGuides || divisions <= 1) return out;
+  const threshold = 8;
+  let best = out;
+  let bestD = threshold + 1;
+  for (let i = 0; i <= divisions; i++) {
+    const line = axisSize * i / divisions;
+    for (const anchor of [v, v + size / 2, v + size]) {
+      const d = Math.abs(anchor - line);
+      if (d < bestD) {
+        bestD = d;
+        best = line - (anchor - v);
+      }
+    }
+  }
+  return bestD <= threshold ? best : out;
+}
+function snapX(v, size) { return snapAxis(v, size, project.guideCols, project.designW); }
+function snapY(v, size) { return snapAxis(v, size, project.guideRows, project.designH); }
 function pointDesign(e) {
   const r = $('#stage').getBoundingClientRect();
   const s = r.width / project.designW;
@@ -1235,8 +1402,8 @@ function onPointerMove(e) {
   if (drag.mode === 'move') {
     w.centerH = false;
     w.centerV = false;
-    w.x = snapVal(drag.ox + dx);
-    w.y = snapVal(drag.oy + dy);
+    w.x = snapX(drag.ox + dx, w.w);
+    w.y = snapY(drag.oy + dy, w.h);
   } else {
     let x = drag.ox, y = drag.oy, ww = drag.ow, hh = drag.oh;
     if (drag.dir.includes('e')) ww = Math.max(16, drag.ow + dx);
@@ -1245,8 +1412,8 @@ function onPointerMove(e) {
     if (drag.dir.includes('n')) { y = drag.oy + dy; hh = drag.oh - dy; }
     if (ww < 16) { if (drag.dir.includes('w')) x = drag.ox + drag.ow - 16; ww = 16; }
     if (hh < 16) { if (drag.dir.includes('n')) y = drag.oy + drag.oh - 16; hh = 16; }
-    w.x = snapVal(x); w.y = snapVal(y);
     w.w = Math.max(8, snapVal(ww)); w.h = Math.max(8, snapVal(hh));
+    w.x = snapX(x, w.w); w.y = snapY(y, w.h);
     applyCentering(w);
   }
   renderStage();
@@ -1294,26 +1461,35 @@ function duplicateSelected() {
   copy.x += 20; copy.y += 20;
   if (copy.type === 'button') copy.id = uniqueId('BTN');
   if (copy.type === 'input') copy.id = uniqueId('INPUT');
+  if (copy.type === 'menu') copy.id = uniqueId('MENU');
   project.widgets.push(copy);
   selectedUid = copy.uid;
   renderAll();
 }
 
 /* ------------------------------- 属性修改 ------------------------------- */
+function syncMenuHeight(w) {
+  if (!w || w.type !== 'menu') return;
+  w.items = Array.isArray(w.items) ? w.items.map(x => String(x).trim()).filter(Boolean) : [];
+  w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
+  w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
+  w.h = w.headerHeight + w.items.length * w.itemHeight;
+}
+
 function applyCentering(w) {
   if (w.centerH) w.x = Math.round((project.designW - w.w) / 2);
   if (w.centerV) w.y = Math.round((project.designH - w.h) / 2);
 }
 
 function setWidgetProp(w, prop, value) {
-  if (['x','y','w','h','fontSize','maxLen','borderWidth','radius'].includes(prop)) {
+  if (['x','y','w','h','fontSize','itemFontSize','headerHeight','itemHeight','maxLen','borderWidth','radius'].includes(prop)) {
     value = Math.round(num(value));
     if (prop === 'w' || prop === 'h') value = Math.max(8, value);
     if (prop === 'maxLen') value = clamp(value, 0, 500);
     if (prop === 'borderWidth') value = clamp(value, 0, 20);
     if (prop === 'radius') value = clamp(value, 0, 200);
   }
-  if (prop === 'visible' || prop === 'enabled' || prop === 'digitsOnly' || prop === 'password') {
+  if (prop === 'visible' || prop === 'enabled' || prop === 'digitsOnly' || prop === 'password' || prop === 'defaultOpen') {
     value = !!value;
   }
   w[prop] = value;
@@ -1326,8 +1502,21 @@ function onPropInput(e) {
   const w = selected();
   historyPush();
   if (!w) {
-    if (['name','designW','designH','bg','bgImage','bgFit','grid','layout','pageName','pageId'].includes(prop)) {
-      if (['designW','designH','grid'].includes(prop)) value = Math.round(num(value));
+    if (['name','designW','designH','bg','bgImage','bgFit','grid','layout','guideCols','guideRows','showGuides','snapGuides','pageName','pageId'].includes(prop)) {
+      if (['designW','designH','grid','guideCols','guideRows'].includes(prop)) value = Math.round(num(value));
+      if (prop === 'guideCols') project.guideCols = clamp(value, 1, 64);
+      if (prop === 'guideRows') project.guideRows = clamp(value, 1, 64);
+      if (prop === 'showGuides') project.showGuides = !!value;
+      if (prop === 'snapGuides') project.snapGuides = !!value;
+      if (['guideCols','guideRows','showGuides','snapGuides'].includes(prop)) {
+        $('#guideCols').value = project.guideCols;
+        $('#guideRows').value = project.guideRows;
+        $('#guideChk').checked = project.showGuides;
+        $('#guideSnapChk').checked = project.snapGuides;
+        renderGuides();
+        saveLocal();
+        return;
+      }
       if (prop === 'pageName') {
         project.pages[project.activePage].name = String(value).trim() || project.pages[project.activePage].name;
         renderPageTabs();
@@ -1361,7 +1550,18 @@ function onPropInput(e) {
     }
     return;
   }
+  if (w.type === 'menu' && prop === 'itemsText') {
+    w.items = String(value).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    syncMenuHeight(w);
+    renderStage();
+    renderLayers();
+    saveLocal();
+    return;
+  }
   setWidgetProp(w, prop, value);
+  if (w.type === 'menu' && (prop === 'headerHeight' || prop === 'itemHeight')) {
+    syncMenuHeight(w);
+  }
   if (prop === 'x') w.centerH = false;
   if (prop === 'y') w.centerV = false;
   if (prop === 'w' || prop === 'h') applyCentering(w);
@@ -1410,6 +1610,9 @@ function generateCode(p) {
   const rectExpr = w => percent
     ? `pctRect(vp, ${fnum(w.x / W)}, ${fnum(w.y / H)}, ${fnum(w.w / W)}, ${fnum(w.h / H)})`
     : `Rect{ ${w.x}, ${w.y}, ${w.w}, ${w.h} }`;
+  const rectAt = (w, dy, hh) => percent
+    ? `pctRect(vp, ${fnum(w.x / W)}, ${fnum((w.y + dy) / H)}, ${fnum(w.w / W)}, ${fnum(hh / H)})`
+    : `Rect{ ${w.x}, ${w.y + dy}, ${w.w}, ${hh} }`;
 
   const usedPageIds = new Set();
   pages.forEach((pg, pi) => {
@@ -1422,11 +1625,14 @@ function generateCode(p) {
   });
 
   const usedButtonIds = new Set();
+  const usedMenuFuncs = new Set();
   pages.forEach(pg => {
     pg.buttons = [];
     pg.inputs = [];
     pg.images = [];
+    pg.menus = [];
     let bgIndex = 0;
+    let menuIndex = 0;
     const prefix = multi ? cppIdent(pg.id, 'PAGE') + '_' : '';
     pg.widgets.forEach((w, wi) => {
       if (['button', 'panel', 'input'].includes(w.type) && String(w.bgImage || '').trim()) {
@@ -1457,6 +1663,16 @@ function generateCode(p) {
           pg.images.push(w);
           w._var = 'g_p' + pg._index + '_img_' + pg.images.length;
         }
+      } else if (w.type === 'menu') {
+        pg.menus.push(w);
+        w._openVar = 'g_p' + pg._index + '_menu_' + (++menuIndex) + '_open';
+        let mbase = (multi ? cppIdent(pg.id, 'PAGE') + '_' : '') + cppIdent(w.id, 'MENU_' + menuIndex);
+        let mn = 2;
+        while (usedMenuFuncs.has(mbase)) mbase = mbase + '_' + (mn++);
+        usedMenuFuncs.add(mbase);
+        w._menuFuncBase = 'onMenu_' + mbase;
+        w._toggleFunc = w._menuFuncBase + '_Toggle';
+        w._itemFuncs = (w.items || []).map((_, i) => w._menuFuncBase + '_Item' + (i + 1));
       }
     });
   });
@@ -1464,8 +1680,9 @@ function generateCode(p) {
   const allWidgets = pages.flatMap(pg => pg.widgets);
   const allButtons = pages.flatMap(pg => pg.buttons);
   const allInputs = pages.flatMap(pg => pg.inputs);
-  const hasBox = allWidgets.some(w => ['button', 'panel', 'input'].includes(w.type));
-  const hasFrame = allWidgets.some(w => ['button', 'panel', 'input'].includes(w.type) && Number(w.borderWidth || 0) > 0);
+  const allMenus = pages.flatMap(pg => pg.menus);
+  const hasBox = allWidgets.some(w => ['button', 'panel', 'input', 'menu'].includes(w.type));
+  const hasFrame = allWidgets.some(w => ['button', 'panel', 'input', 'menu'].includes(w.type) && Number(w.borderWidth || 0) > 0);
   const hasInput = allInputs.length > 0;
   const firstPage = pages[0]._cppId;
 
@@ -1522,6 +1739,7 @@ function generateCode(p) {
   }
 
   i4('static int g_page = ' + firstPage + ';');
+  pages.forEach(pg => pg.menus.forEach(w => i4('static bool ' + w._openVar + ' = ' + (w.defaultOpen ? 'true' : 'false') + ';')));
   if (bgImage) i4('static Image g_bg;');
   pages.forEach(pg => pg.images.forEach(w => i4('static Image ' + w._var + ';')));
   pages.forEach(pg => pg.widgets.forEach(w => { if (w._bgVar) i4('static Image ' + w._bgVar + ';'); }));
@@ -1602,6 +1820,7 @@ function generateCode(p) {
     });
   });
   i8('g_page = ' + firstPage + ';');
+  pages.forEach(pg => pg.menus.forEach(w => i8(w._openVar + ' = ' + (w.defaultOpen ? 'true' : 'false') + ';')));
   i4('}');
   a('');
 
@@ -1645,14 +1864,32 @@ function generateCode(p) {
     a('');
   }
 
+  allMenus.forEach(w => {
+    i4('// 伸缩菜单：' + String(w.text || w.id || '菜单'));
+    i4('static void ' + w._toggleFunc + '()');
+    i4('{');
+    i8('// 菜单已经自动展开/收起；这里写额外逻辑（可以留空）');
+    i4('}');
+    a('');
+    (w.items || []).forEach((item, i) => {
+      i4('// 菜单项：' + String(item));
+      i4('static void ' + w._itemFuncs[i] + '()');
+      i4('{');
+      i8('// TODO: 菜单项“' + String(item).replace(/\r?\n/g, ' ') + '”的逻辑');
+      i4('}');
+      a('');
+    });
+  });
+
   pages.forEach(pg => {
     const visibleInputs = pg.inputs.filter(w => w.visible !== false && w.enabled !== false);
     const clickButtons = pg.buttons.filter(w => w.visible !== false && w.enabled !== false);
+    const clickMenus = pg.menus.filter(w => w.visible !== false && w.enabled !== false);
     i4('static void updatePage' + pg._index + '(const Input& in, const Viewport& vp)');
     i4('{');
     i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
     i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
-    if (!visibleInputs.length && !clickButtons.length) {
+    if (!visibleInputs.length && !clickButtons.length && !clickMenus.length) {
       i8('(void)inArea;');
       i8('(void)m;');
       i8('(void)in;');
@@ -1671,6 +1908,33 @@ function generateCode(p) {
       i8('}');
       visibleInputs.forEach(w => i8(w._var + '.update(in);'));
       a('');
+    }
+    if (clickMenus.length) {
+      i8('// 伸缩菜单：点标题展开/收起，展开后点菜单项');
+      clickMenus.forEach(w => {
+        i8('if (in.clicked() && inArea)');
+        i8('{');
+        i12('if (' + rectAt(w, 0, w.headerHeight) + '.contains(m))');
+        i12('{');
+        i12('    ' + w._openVar + ' = !' + w._openVar + ';');
+        i12('    ' + w._toggleFunc + '();');
+        i12('    return;');
+        i12('}');
+        if ((w.items || []).length) {
+          i12('if (' + w._openVar + ')');
+          i12('{');
+          (w.items || []).forEach((item, i) => {
+            i12('    if (' + rectAt(w, w.headerHeight + i * w.itemHeight, w.itemHeight) + '.contains(m))');
+            i12('    {');
+            i12('        ' + w._itemFuncs[i] + '();');
+            i12('        return;');
+            i12('    }');
+          });
+          i12('}');
+        }
+        i8('}');
+        a('');
+      });
     }
     if (clickButtons.length) {
       i8('// 按钮点击（后画的优先）');
@@ -1732,6 +1996,30 @@ function generateCode(p) {
         if (w.fit === 'cover') i8('vp.imageCover(' + w._var + ', ' + R + ');');
         else if (w.fit === 'stretch') i8('vp.image(' + w._var + ', ' + R + ');');
         else i8('vp.imageFit(' + w._var + ', ' + R + ');');
+        a('');
+      } else if (w.type === 'menu') {
+        usedM = true;
+        const radius = Math.round(num(w.radius, 0));
+        const bw = Math.round(num(w.borderWidth, 0));
+        i8('// 伸缩菜单：' + String(w.text || w.id || ''));
+        i8('{');
+        i12('const Rect r = ' + rectAt(w, 0, w.headerHeight) + ';');
+        i12('const bool hover = r.contains(m);');
+        i12('fillRound(r, ' + radius + ', hover ? ' + rgbExpr(w.headerHoverBg) + ' : ' + rgbExpr(w.headerBg) + ');');
+        if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
+        i12('vp.textIn(Rect{ r.x + 14, r.y, r.w - 42, r.h }, ' + cppString(String(w.text || '菜单')) + ', ' + Math.round(num(w.fontSize, 26)) + ', ' + rgbExpr(w.textColor) + ', Align::Left);');
+        i12('vp.textIn(Rect{ r.right() - 28, r.y, 20, r.h }, (' + w._openVar + ' ? "▴" : "▾"), 16, ' + rgbExpr(w.textColor) + ', Align::Center);');
+        i8('}');
+        i12('if (' + w._openVar + ')');
+        i12('{');
+        (w.items || []).forEach((item, i) => {
+          i12('    const Rect r' + i + ' = ' + rectAt(w, w.headerHeight + i * w.itemHeight, w.itemHeight) + ';');
+          i12('    const bool h' + i + ' = r' + i + '.contains(m);');
+          i12('    fillRound(r' + i + ', ' + radius + ', h' + i + ' ? ' + rgbExpr(w.itemHoverBg) + ' : ' + rgbExpr(w.itemBg) + ');');
+          if (bw > 0) i12('    frameRound(r' + i + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
+          i12('    vp.textIn(r' + i + '.inset(14), ' + cppString(String(item)) + ', ' + Math.round(num(w.itemFontSize, 24)) + ', ' + rgbExpr(w.textColor) + ', Align::Left);');
+        });
+        i12('}');
         a('');
       } else if (w.type === 'button') {
         if (w.enabled !== false) usedM = true;
@@ -1854,6 +2142,10 @@ async function copyCode() {
 function renderAll() {
   $('#projectName').value = project.name || '';
   $('#gridSize').textContent = project.grid;
+  $('#guideCols').value = project.guideCols;
+  $('#guideRows').value = project.guideRows;
+  $('#guideChk').checked = project.showGuides;
+  $('#guideSnapChk').checked = project.snapGuides;
   renderPageTabs();
   renderStage();
   renderLayers();
@@ -1880,6 +2172,11 @@ function init() {
   if (params.has('empty')) project = blankProject();
   if (params.get('layout') === 'fixed') project.layout = 'fixed';
   if (params.get('layout') === 'percent') project.layout = 'percent';
+  if (params.has('guides')) {
+    project.showGuides = true;
+    project.guideCols = clamp(Math.round(num(params.get('cols'), 4)), 1, 64);
+    project.guideRows = clamp(Math.round(num(params.get('rows'), 3)), 1, 64);
+  }
 
   // 项目名
   $('#projectName').addEventListener('input', e => {
@@ -1958,9 +2255,24 @@ function init() {
       const el = e.target.closest('.widget');
       if (el) {
         const w = project.widgets.find(x => x.uid === el.dataset.uid);
-        if (w && w.type === 'button' && w.visible !== false && w.enabled !== false) {
-          e.preventDefault();
-          previewClick(w);
+        if (w && w.visible !== false && w.enabled !== false) {
+          if (w.type === 'button') {
+            e.preventDefault();
+            previewClick(w);
+          } else if (w.type === 'menu') {
+            const part = e.target.closest('[data-menu-part]');
+            if (part && part.dataset.menuPart === 'header') {
+              e.preventDefault();
+              previewMenuOpen[w.uid] = !previewMenuOpen[w.uid];
+              addPreviewLog(`伸缩菜单“${w.text || '菜单'}” ${previewMenuOpen[w.uid] ? '展开' : '收起'}`);
+              renderStage();
+            } else if (part && part.dataset.menuPart === 'item') {
+              e.preventDefault();
+              const idx = Number(part.dataset.index) + 1;
+              addPreviewLog(`菜单项“${part.textContent}” → 逻辑在 onMenu_${cppIdent(w.id, 'MENU_1')}_Item${idx}()`);
+              toast('菜单项逻辑在生成的 onMenu_... 回调里', 2200);
+            }
+          }
         }
       }
       return;
@@ -2031,6 +2343,20 @@ function init() {
 
   // 网格/缩放
   $('#snapChk').addEventListener('change', e => { snap = e.target.checked; });
+  const syncGuides = () => {
+    project.guideCols = clamp(Math.round(num($('#guideCols').value, 4)), 1, 64);
+    project.guideRows = clamp(Math.round(num($('#guideRows').value, 3)), 1, 64);
+    project.showGuides = $('#guideChk').checked;
+    project.snapGuides = $('#guideSnapChk').checked;
+    $('#guideCols').value = project.guideCols;
+    $('#guideRows').value = project.guideRows;
+    renderGuides();
+    saveLocal();
+  };
+  $('#guideCols').addEventListener('change', syncGuides);
+  $('#guideRows').addEventListener('change', syncGuides);
+  $('#guideChk').addEventListener('change', syncGuides);
+  $('#guideSnapChk').addEventListener('change', syncGuides);
   $('#zoomSel').addEventListener('change', applyZoomSelection);
   window.addEventListener('resize', fitIfNeeded);
 
@@ -2094,6 +2420,14 @@ function init() {
   if (params.has('previewclick')) {
     const b = project.widgets.find(w => w.type === 'button' && w.target);
     if (b) previewClick(b);
+  }
+  if (params.has('previewmenu')) {
+    const mw = project.widgets.find(w => w.type === 'menu');
+    if (mw) {
+      previewMenuOpen[mw.uid] = true;
+      renderStage();
+      addPreviewLog(`伸缩菜单“${mw.text || '菜单'}” 展开`);
+    }
   }
   if (params.has('previewinput')) {
     const iw = project.widgets.find(w => w.type === 'input');
@@ -2214,6 +2548,30 @@ function init() {
     } else {
       ok('预览输入框 maxLen', false);
       ok('预览输入框值记录', false);
+    }
+    exitPreview();
+
+    project.showGuides = true;
+    project.guideCols = 5;
+    project.guideRows = 4;
+    renderStage();
+    ok('等分线渲染', document.querySelectorAll('#guides .gv').length === 4 &&
+      document.querySelectorAll('#guides .gh').length === 3);
+
+    enterPreview();
+    switchPage(1, true);
+    const menuW = project.widgets.find(w => w.type === 'menu');
+    const menuHeader = document.querySelector('.w-menu .menu-header');
+    if (menuHeader) {
+      menuHeader.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      ok('预览菜单展开', !!previewMenuOpen[menuW.uid] &&
+        document.querySelectorAll('.w-menu .menu-item').length === menuW.items.length);
+      const menuItem = document.querySelector('.w-menu .menu-item');
+      menuItem.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      ok('预览菜单项日志', $('#previewLog').textContent.includes('菜单项'));
+    } else {
+      ok('预览菜单展开', false);
+      ok('预览菜单项日志', false);
     }
     exitPreview();
 
