@@ -117,6 +117,7 @@
   .w-image img{width:100%; height:100%; display:block}
   .w-input{display:flex; align-items:center; overflow:hidden; white-space:nowrap}
   .w-input .ph{opacity:.65}
+  .w-input.preview-input input::placeholder{color:var(--ph); opacity:1}
   #selection{position:absolute; pointer-events:none; z-index:99; display:none}
   #selection.show{display:block}
   #selection .box{position:absolute; inset:0; border:1.5px dashed var(--accent2); box-shadow:0 0 0 1px rgba(0,0,0,.4)}
@@ -339,6 +340,7 @@ let lastHistoryAt = 0;
 let generatedCode = '';
 let uidSeq = 1;
 let previewReturnPage = -1;
+let previewInputValues = {};
 
 /* ------------------------------- 工具 ------------------------------- */
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -729,19 +731,24 @@ function addPreviewLog(text) {
 }
 function enterPreview() {
   previewReturnPage = project.activePage;
+  previewInputValues = {};
   document.body.classList.add('preview');
   const box = $('#previewLog');
   if (box) box.innerHTML = '';
-  addPreviewLog('预览模式：点击按钮查看跳转/逻辑；Esc 退出');
+  addPreviewLog('预览模式：按钮可跳转，文本输入框可点击输入；Esc 退出');
+  renderStage();
   renderSelection();
   setTimeout(fitIfNeeded, 0);
 }
 function exitPreview() {
   document.body.classList.remove('preview');
+  previewInputValues = {};
   const box = $('#previewLog');
   if (box) box.innerHTML = '';
   if (previewReturnPage >= 0 && previewReturnPage !== project.activePage) {
     switchPage(previewReturnPage, true);
+  } else {
+    renderStage();
   }
   previewReturnPage = -1;
   renderSelection();
@@ -879,16 +886,57 @@ function renderStage() {
         el.style.textAlign = 'center';
       }
     } else if (w.type === 'input') {
-      const hasText = String(w.value || '').length > 0;
       el.style.background = w.inputBg || '#181e2c';
-      el.style.color = hasText ? (w.textColor || '#e8eefc') : (w.placeholderColor || '#7c8aa5');
       el.style.fontSize = (w.fontSize || 24) + 'px';
-      el.style.padding = '0 12px';
       prependWidgetBg(el, w);
-      const ph = document.createElement('span');
-      ph.className = hasText ? '' : 'ph';
-      ph.textContent = hasText ? w.value : (w.placeholder || '');
-      el.appendChild(ph);
+      if (document.body.classList.contains('preview')) {
+        el.classList.add('preview-input');
+        el.style.padding = '0';
+        el.style.setProperty('--ph', w.placeholderColor || '#7c8aa5');
+        let val = Object.prototype.hasOwnProperty.call(previewInputValues, w.uid)
+          ? String(previewInputValues[w.uid])
+          : String(w.value || '');
+        if (w.digitsOnly) val = val.replace(/\D/g, '');
+        const maxLen = Math.max(0, Math.round(num(w.maxLen, 16)));
+        if (maxLen > 0) val = val.slice(0, maxLen);
+        previewInputValues[w.uid] = val;
+        el.style.borderColor = w.borderColor || '#4a5a7a';
+
+        const inp = document.createElement('input');
+        inp.type = w.password ? 'password' : 'text';
+        inp.value = val;
+        inp.placeholder = w.placeholder || '';
+        inp.maxLength = maxLen > 0 ? maxLen : 524288;
+        inp.autocomplete = 'off';
+        inp.spellcheck = false;
+        inp.style.cssText = 'width:100%;height:100%;box-sizing:border-box;border:0;outline:0;'
+          + 'background:transparent;font-family:inherit;line-height:normal;padding:0 12px;'
+          + 'font-size:' + Math.round(num(w.fontSize, 24)) + 'px;'
+          + 'color:' + (w.textColor || '#e8eefc') + ';'
+          + 'caret-color:' + (w.textColor || '#e8eefc') + ';';
+        inp.addEventListener('input', () => {
+          let v = inp.value;
+          if (w.digitsOnly) v = v.replace(/\D/g, '');
+          if (maxLen > 0) v = v.slice(0, maxLen);
+          if (v !== inp.value) inp.value = v;
+          previewInputValues[w.uid] = v;
+        });
+        inp.addEventListener('focus', () => {
+          el.style.borderColor = w.focusBorderColor || w.borderColor;
+        });
+        inp.addEventListener('blur', () => {
+          el.style.borderColor = w.borderColor;
+        });
+        el.appendChild(inp);
+      } else {
+        const hasText = String(w.value || '').length > 0;
+        el.style.color = hasText ? (w.textColor || '#e8eefc') : (w.placeholderColor || '#7c8aa5');
+        el.style.padding = '0 12px';
+        const ph = document.createElement('span');
+        ph.className = hasText ? '' : 'ph';
+        ph.textContent = hasText ? w.value : (w.placeholder || '');
+        el.appendChild(ph);
+      }
     }
     box.appendChild(el);
   });
@@ -1994,11 +2042,15 @@ function init() {
 
   // 键盘
   window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.body.classList.contains('preview')) {
+      e.preventDefault();
+      exitPreview();
+      return;
+    }
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
     if (e.key === 'Escape') {
-      if (document.body.classList.contains('preview')) exitPreview();
-      else if (!$('#codeModal').classList.contains('hidden')) closeCode();
+      if (!$('#codeModal').classList.contains('hidden')) closeCode();
       else select(null);
       return;
     }
@@ -2042,6 +2094,18 @@ function init() {
   if (params.has('previewclick')) {
     const b = project.widgets.find(w => w.type === 'button' && w.target);
     if (b) previewClick(b);
+  }
+  if (params.has('previewinput')) {
+    const iw = project.widgets.find(w => w.type === 'input');
+    if (iw) {
+      previewInputValues[iw.uid] = '你好，玩家';
+      renderStage();
+      const inp = document.querySelector('.w-input.preview-input input');
+      if (inp) {
+        inp.focus();
+        inp.setSelectionRange(inp.value.length, inp.value.length);
+      }
+    }
   }
 
   // 测试用：?dumpjson=1 输出当前工程 JSON
@@ -2136,6 +2200,22 @@ function init() {
 
     exitPreview();
     ok('退出预览恢复页面', project.activePage === beforePage);
+
+    enterPreview();
+    switchPage(0, true);
+    const inputW = project.widgets.find(w => w.type === 'input');
+    const inp = document.querySelector('.w-input.preview-input input');
+    ok('预览输入框存在', !!inp);
+    if (inp) {
+      inp.value = '123456789012345';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      ok('预览输入框 maxLen', inp.value.length === 12);
+      ok('预览输入框值记录', String(previewInputValues[inputW.uid] || '').length === 12);
+    } else {
+      ok('预览输入框 maxLen', false);
+      ok('预览输入框值记录', false);
+    }
+    exitPreview();
 
     const body = results.join('\n');
     document.body.innerHTML = '<pre id="selftest">' + escHtml(body) + '</pre>';

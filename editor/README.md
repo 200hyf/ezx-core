@@ -81,9 +81,12 @@ static Rect pctRect(const Viewport& vp, float x, float y, float w, float h)
 - **点击按钮会真正触发页面跳转**（按按钮「跳转页面」配置）；
 - 左下角有**预览日志**：记录点击了哪个按钮、跳到哪个页面；
 - 如果按钮的「按钮逻辑」里写了非注释代码，日志会提示“其他逻辑：`saveSettings();`”，提醒你这里还会执行别的东西；
+- **文本输入框可以直接点击、输入**：支持光标、选中、密码、只数字、最大长度；预览值只是临时的，退出后不会改设计；
 - `Esc` 或右上角「退出预览」返回；返回后会回到进入预览前的编辑页面。
 
 ![预览模式](editor_preview_mode.png)
+
+![预览输入框](editor_preview_input.png)
 
 ## 页面（跳转）
 
@@ -393,5 +396,6 @@ editor/
 ├─ editor_preview.png      界面截图
 ├─ editor_selected.png     选中按钮时的属性面板截图
 ├─ editor_page2.png        第二页（页面跳转）截图
-└─ editor_preview_mode.png 预览模式（按钮跳转 + 日志）截图
+├─ editor_preview_mode.png 预览模式（按钮跳转 + 日志）截图
+└─ editor_preview_input.png 预览模式（文本输入框）截图
 ```
