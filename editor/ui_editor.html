@@ -892,7 +892,7 @@ function previewClick(w) {
 }
 
 /* ------------------------------- 渲染舞台 ------------------------------- */
-function gridCss(size) {
+function gridCss() {
   return `linear-gradient(to right, rgba(255,255,255,.045) 1px, transparent 1px),` +
          `linear-gradient(to bottom, rgba(255,255,255,.045) 1px, transparent 1px)`;
 }
@@ -940,7 +940,7 @@ function renderStage() {
     bg.style.display = 'none';
   }
   const grid = $('#grid');
-  grid.style.backgroundImage = gridCss(project.grid);
+  grid.style.backgroundImage = gridCss();
   grid.style.backgroundSize = `${project.grid}px ${project.grid}px`;
   renderGuides();
 
@@ -1274,12 +1274,6 @@ function menuItemEditorHTML(w) {
   return h;
 }
 
-function checkField(label, prop, checked) {
-  return `<div class="field"><label>${label}</label>
-    <div class="chk"><label><input type="checkbox" data-prop="${prop}" ${checked ? 'checked' : ''}> 是</label></div>
-  </div>`;
-}
-
 function renderProps() {
   const box = $('#props');
   const w = selected();
@@ -1545,11 +1539,6 @@ function snapAxis(v, size, divisions, axisSize) {
 }
 function snapX(v, size) { return snapAxis(v, size, project.guideCols, project.designW); }
 function snapY(v, size) { return snapAxis(v, size, project.guideRows, project.designH); }
-function pointDesign(e) {
-  const r = $('#stage').getBoundingClientRect();
-  const s = r.width / project.designW;
-  return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
-}
 function startDrag(e, w, mode, dir) {
   historyPush();
   drag = {
@@ -2475,27 +2464,9 @@ function loadProject(p, silent) {
 }
 
 function init() {
-  const params = new URLSearchParams(location.search);
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { saved = null; }
   project = saved ? normalizeProject(saved) : sampleProject();
-  if (params.has('empty')) project = blankProject();
-  if (params.get('layout') === 'fixed') project.layout = 'fixed';
-  if (params.get('layout') === 'percent') project.layout = 'percent';
-  if (params.has('guides')) {
-    project.showGuides = true;
-    project.guideCols = clamp(Math.round(num(params.get('cols'), 4)), 1, 64);
-    project.guideRows = clamp(Math.round(num(params.get('rows'), 3)), 1, 64);
-  }
-  const menudir = params.get('menudir');
-  if (['down', 'up', 'left', 'right', 'fan'].includes(menudir)) {
-    const m = project.widgets.find(w => w.type === 'menu') || project.pages[1]?.widgets.find(w => w.type === 'menu');
-    if (m) {
-      m.expandDir = menudir;
-      syncMenuHeight(m);
-      fitMenuToStage(m);
-    }
-  }
 
   // 项目名
   $('#projectName').addEventListener('input', e => {
@@ -2773,229 +2744,6 @@ function init() {
 
   renderAll();
 
-  // 调试用：?page=1 打开指定页面；?select=BTN_START 自动选中控件
-  const pageParam = Number(params.get('page'));
-  if (Number.isInteger(pageParam) && pageParam >= 0) switchPage(pageParam);
-  const selParam = params.get('select');
-  if (selParam) {
-    const w = project.widgets.find(x => String(x.id || '') === selParam);
-    if (w) select(w.uid);
-  }
-  if (params.has('preview')) enterPreview();
-  if (params.has('previewcode')) {
-    const b = project.widgets.find(w => w.type === 'button' && w.target);
-    if (b) b.handler = 'saveSettings();';
-  }
-  if (params.has('previewclick')) {
-    const b = project.widgets.find(w => w.type === 'button' && w.target);
-    if (b) previewClick(b);
-  }
-  if (params.has('previewmenu')) {
-    const mw = project.widgets.find(w => w.type === 'menu');
-    if (mw) {
-      previewMenuOpen[mw.uid] = true;
-      renderStage();
-      addPreviewLog(`伸缩菜单“${mw.text || '菜单'}” 展开`);
-    }
-  }
-  if (params.has('previewinput')) {
-    const iw = project.widgets.find(w => w.type === 'input');
-    if (iw) {
-      previewInputValues[iw.uid] = '你好，玩家';
-      renderStage();
-      const inp = document.querySelector('.w-input.preview-input input');
-      if (inp) {
-        inp.focus();
-        inp.setSelectionRange(inp.value.length, inp.value.length);
-      }
-    }
-  }
-
-  // 测试用：?dumpjson=1 输出当前工程 JSON
-  if (params.has('dumpjson')) {
-    document.body.innerHTML = '<pre id="dumpjson">' + escHtml(JSON.stringify(serializeProject(), null, 2)) + '</pre>';
-    return;
-  }
-
-  // 测试用：?selftest=1 跑一组核心交互断言
-  if (params.has('selftest')) {
-    const results = [];
-    const ok = (name, cond) => results.push((cond ? 'PASS ' : 'FAIL ') + name);
-
-    const np = normalizeProject({ designW: 800, designH: 600, widgets: [{ type: 'button', x: 123, y: 45, w: 100, h: 50, text: 'x' }] });
-    ok('normalize 保留 x', np.widgets[0].x === 123 && np.widgets[0].w === 100);
-
-    const code = generateCode(sampleProject());
-    ok('生成 enum', code.includes('UI_MAIN_BTN_START'));
-    ok('生成输入框光标', code.includes('placeCursor'));
-    ok('每个按钮独立 hover 作用域', (code.match(/const bool hover/g) || []).length >= 3);
-    ok('生成页面枚举', code.includes('UI_PAGE_SETTINGS'));
-    ok('生成页面跳转', code.includes('goPage(UI_PAGE_SETTINGS)'));
-    ok('比例布局 pctRect', code.includes('pctRect(vp'));
-    ok('每个按钮独立回调', code.includes('onButton_MAIN_BTN_START()') && code.includes('onButtonClick'));
-    const fixedCode = generateCode(Object.assign({}, sampleProject(), { layout: 'fixed' }));
-    ok('固定布局不使用 pctRect', !fixedCode.includes('pctRect'));
-
-    const beforeCount = project.widgets.length;
-    addWidget('label');
-    ok('添加控件', project.widgets.length === beforeCount + 1);
-
-    const testW = project.widgets[project.widgets.length - 1];
-    testW.centerH = true;
-    testW.centerV = true;
-    applyCentering(testW);
-    ok('自动居中', testW.x === Math.round((project.designW - testW.w) / 2) &&
-      testW.y === Math.round((project.designH - testW.h) / 2));
-
-    const btnA = project.widgets.find(w => w.type === 'button' && w.id === 'BTN_START');
-    const btnB = project.widgets.find(w => w.type === 'button' && w.id === 'BTN_SETTINGS');
-    if (btnA && btnB) {
-      select(btnA.uid);
-      const pa = document.querySelector('#props [data-prop="text"]');
-      ok('属性绑定到 A', !!pa && pa.dataset.wuid === btnA.uid);
-      const oldText = btnA.text;
-      pa.value = '__A__';
-      pa.dispatchEvent(new Event('input', { bubbles: true }));
-      ok('只更新 A 的文字', btnA.text === '__A__' && btnB.text !== '__A__');
-      select(btnB.uid);
-      const pb = document.querySelector('#props [data-prop="text"]');
-      ok('切换后绑定到 B', !!pb && pb.dataset.wuid === btnB.uid);
-      btnA.text = oldText;
-    } else {
-      ok('属性绑定到 A', false);
-      ok('只更新 A 的文字', false);
-      ok('切换后绑定到 B', false);
-    }
-
-    const menuWTest = project.pages[1] && project.pages[1].widgets.find(w => w.type === 'menu');
-    if (menuWTest) {
-      const oldWidth = menuWTest.itemWidth;
-      menuWTest.itemWidth = 180;
-      syncMenuHeight(menuWTest);
-      ok('菜单子按钮单独宽度', menuItemPos(menuWTest, 0).w === 180);
-      menuWTest.itemWidth = oldWidth;
-      syncMenuHeight(menuWTest);
-    } else {
-      ok('菜单子按钮单独宽度', false);
-    }
-
-    const bgw = project.widgets.find(w => w.type === 'panel') || project.widgets.find(w => w.type === 'button');
-    if (bgw) {
-      bgw.bgPreviewData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-      renderStage();
-      ok('控件背景图渲染', !!document.querySelector('.widget-bg'));
-    } else {
-      ok('控件背景图渲染', false);
-    }
-    select(testW.uid);
-    const el = document.querySelector('.widget[data-uid="' + testW.uid + '"]');
-    if (el) {
-      const r = el.getBoundingClientRect();
-      const ox = testW.x;
-      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: r.left + 5, clientY: r.top + 5 }));
-      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 45, clientY: r.top + 25 }));
-      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-      ok('拖拽改变位置', project.widgets.find(w => w.uid === testW.uid).x !== ox);
-    } else {
-      ok('拖拽改变位置', false);
-    }
-
-    select(testW.uid);
-    const sel = document.querySelector('.handle[data-dir="se"]');
-    if (sel) {
-      const r = sel.getBoundingClientRect();
-      const ow = testW.w;
-      sel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: r.left + 4, clientY: r.top + 4 }));
-      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 44, clientY: r.top + 24 }));
-      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-      ok('缩放改变宽高', project.widgets.find(w => w.uid === testW.uid).w !== ow);
-    } else {
-      ok('缩放改变宽高', false);
-    }
-
-    const beforePages = project.pages.length;
-    addPage();
-    ok('新增页面', project.pages.length === beforePages + 1);
-    switchPage(0);
-    ok('切换页面', project.activePage === 0);
-
-    ok('按钮逻辑检测', handlerCodeSnippet('// TODO\nint a = 1;') === 'int a = 1;');
-    const targetBtn = project.widgets.find(w => w.type === 'button' && w.target);
-    const beforePage = project.activePage;
-    enterPreview();
-    previewClick(targetBtn);
-    ok('预览跳转生效', project.activePage !== beforePage);
-    ok('预览日志有提示', $('#previewLog').textContent.includes('跳转'));
-
-    switchPage(0, true);
-    const codeBtn = project.widgets.find(w => w.type === 'button' && !w.target);
-    codeBtn.handler = 'saveSettings();';
-    previewClick(codeBtn);
-    ok('预览其他逻辑提示', $('#previewLog').textContent.includes('其他逻辑'));
-
-    exitPreview();
-    ok('退出预览恢复页面', project.activePage === beforePage);
-
-    enterPreview();
-    switchPage(0, true);
-    const inputW = project.widgets.find(w => w.type === 'input');
-    const inp = document.querySelector('.w-input.preview-input input');
-    ok('预览输入框存在', !!inp);
-    if (inp) {
-      inp.value = '123456789012345';
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      ok('预览输入框 maxLen', inp.value.length === 12);
-      ok('预览输入框值记录', String(previewInputValues[inputW.uid] || '').length === 12);
-    } else {
-      ok('预览输入框 maxLen', false);
-      ok('预览输入框值记录', false);
-    }
-    exitPreview();
-
-    project.showGuides = true;
-    project.guideCols = 5;
-    project.guideRows = 4;
-    renderStage();
-    ok('等分线渲染', document.querySelectorAll('#guides .gv').length === 4 &&
-      document.querySelectorAll('#guides .gh').length === 3);
-
-    enterPreview();
-    switchPage(1, true);
-    const menuW = project.widgets.find(w => w.type === 'menu');
-    const menuHeader = document.querySelector('.w-menu .menu-header');
-    if (menuHeader) {
-      menuHeader.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-      ok('预览菜单展开', !!previewMenuOpen[menuW.uid] &&
-        document.querySelectorAll('.w-menu .menu-item').length === menuW.items.length);
-      const menuItem = document.querySelector('.w-menu .menu-item');
-      menuItem.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-      ok('预览菜单项日志', $('#previewLog').textContent.includes('菜单项'));
-      ok('预览菜单项跳转', project.activePage === 0);
-      const oldDir = menuW.expandDir;
-      menuW.expandDir = 'fan';
-      syncMenuHeight(menuW);
-      fitMenuToStage(menuW);
-      const fb = menuBounds(menuW);
-      ok('扇形展开在画布内', fb.x >= 0 && fb.y >= 0 &&
-        fb.x + fb.w <= project.designW + 1 && fb.y + fb.h <= project.designH + 1);
-      menuW.expandDir = oldDir;
-      syncMenuHeight(menuW);
-    } else {
-      ok('预览菜单展开', false);
-      ok('预览菜单项日志', false);
-    }
-    exitPreview();
-
-    const body = results.join('\n');
-    document.body.innerHTML = '<pre id="selftest">' + escHtml(body) + '</pre>';
-    return;
-  }
-
-  // 测试用：?dumpcode=1 只输出生成的代码，方便命令行验证
-  if (params.has('dumpcode')) {
-    const code = generateCode(project);
-    document.body.innerHTML = '<pre id="dumpcode">' + escHtml(code) + '</pre>';
-  }
 }
 
 init();
