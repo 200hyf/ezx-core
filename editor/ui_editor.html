@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ezx-core UI 编辑器</title>
+<style>
+  :root{
+    --bg:#0e1117;
+    --panel:#151922;
+    --panel2:#1b202b;
+    --line:#2a3142;
+    --text:#dce5f5;
+    --muted:#8d98ad;
+    --accent:#4f8cff;
+    --accent2:#6eaaff;
+    --danger:#ff6b6b;
+    --top:54px;
+    --left:224px;
+    --right:304px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:13px/1.5 system-ui,"Microsoft YaHei","Segoe UI",sans-serif;
+    overflow:hidden;
+  }
+  button{font:inherit;cursor:pointer}
+  .topbar{
+    height:var(--top); display:flex; align-items:center; gap:10px;
+    padding:0 14px; background:var(--panel); border-bottom:1px solid var(--line);
+    position:relative; z-index:20;
+  }
+  .brand{font-weight:700; font-size:15px; white-space:nowrap}
+  .brand span{color:var(--muted); font-weight:400; margin-left:6px; font-size:12px}
+  .project-name{
+    width:180px; margin-left:8px; background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:6px; padding:6px 9px; outline:none;
+  }
+  .project-name:focus{border-color:var(--accent)}
+  .actions{display:flex; align-items:center; gap:6px; margin-left:auto}
+  .btn{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:6px; padding:6px 10px; white-space:nowrap;
+  }
+  .btn:hover{border-color:#40506e; background:#222938}
+  .btn:disabled{opacity:.4; cursor:default}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600}
+  .btn.primary:hover{background:#3f7df0}
+  .btn.danger:hover{border-color:var(--danger); color:var(--danger)}
+  .divider{width:1px; height:22px; background:var(--line); margin:0 4px}
+  main{height:calc(100% - var(--top)); display:grid; grid-template-columns:var(--left) 1fr var(--right)}
+  aside{background:var(--panel); overflow:auto; padding:12px}
+  aside.left{border-right:1px solid var(--line)}
+  aside.right{border-left:1px solid var(--line)}
+  h3{margin:4px 0 8px; font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.4px}
+  h3:not(:first-child){margin-top:18px}
+  .palette{display:grid; grid-template-columns:1fr 1fr; gap:7px}
+  .pal-btn{
+    background:var(--panel2); border:1px solid var(--line); border-radius:7px;
+    padding:9px 6px; color:var(--text); text-align:center;
+  }
+  .pal-btn:hover{border-color:var(--accent); background:#1e2a40}
+  .pal-btn b{display:block; font-size:18px; font-weight:400; line-height:1.2; color:var(--accent2)}
+  .pal-btn small{color:var(--muted)}
+  #layers{display:flex; flex-direction:column; gap:4px; margin-top:4px}
+  .layer{
+    display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:5px;
+    border:1px solid transparent; background:var(--panel2); cursor:pointer;
+  }
+  .layer:hover{border-color:#3b4b68}
+  .layer.selected{border-color:var(--accent); background:#1d2a42}
+  .layer .ico{width:18px; text-align:center; color:var(--accent2)}
+  .layer .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .layer .mini{
+    background:transparent; border:0; color:var(--muted); padding:0 2px; font-size:12px;
+  }
+  .layer .mini:hover{color:var(--text)}
+  .workspace{position:relative; overflow:hidden; display:flex; flex-direction:column}
+  #stageWrap{flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:24px}
+  #stageHolder{position:relative; flex:none}
+  #stage{
+    position:absolute; left:0; top:0; transform-origin:0 0; overflow:hidden;
+    box-shadow:0 18px 60px rgba(0,0,0,.55); background:#12141c;
+  }
+  #grid{position:absolute; inset:0; pointer-events:none; opacity:.7}
+  #widgets{position:absolute; inset:0}
+  .widget{position:absolute; user-select:none; cursor:move; overflow:hidden}
+  .widget.hidden{display:none}
+  .widget.disabled{opacity:.65}
+  .w-button{display:flex; align-items:center; justify-content:center; text-align:center; white-space:pre-wrap}
+  .w-label{display:flex; align-items:center; white-space:pre-wrap; overflow:hidden}
+  .w-panel{}
+  .w-image{display:flex; align-items:center; justify-content:center; background:#0b0e14; color:#5b6b86; overflow:hidden}
+  .w-image img{width:100%; height:100%; display:block}
+  .w-input{display:flex; align-items:center; overflow:hidden; white-space:nowrap}
+  .w-input .ph{opacity:.65}
+  #selection{position:absolute; pointer-events:none; z-index:99; display:none}
+  #selection.show{display:block}
+  #selection .box{position:absolute; inset:0; border:1.5px dashed var(--accent2); box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+  .handle{
+    position:absolute; width:9px; height:9px; margin:-5px 0 0 -5px; background:#fff;
+    border:1px solid var(--accent); border-radius:2px; pointer-events:auto; z-index:100;
+  }
+  .handle[data-dir="nw"]{left:0;top:0;cursor:nwse-resize}
+  .handle[data-dir="n"]{left:50%;top:0;cursor:ns-resize}
+  .handle[data-dir="ne"]{left:100%;top:0;cursor:nesw-resize}
+  .handle[data-dir="e"]{left:100%;top:50%;cursor:ew-resize}
+  .handle[data-dir="se"]{left:100%;top:100%;cursor:nwse-resize}
+  .handle[data-dir="s"]{left:50%;top:100%;cursor:ns-resize}
+  .handle[data-dir="sw"]{left:0;top:100%;cursor:nesw-resize}
+  .handle[data-dir="w"]{left:0;top:50%;cursor:ew-resize}
+  .statusbar{
+    height:34px; border-top:1px solid var(--line); background:var(--panel);
+    display:flex; align-items:center; gap:14px; padding:0 12px; color:var(--muted); font-size:12px;
+  }
+  .statusbar label{display:flex; align-items:center; gap:5px; cursor:pointer}
+  .statusbar select{background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:4px; padding:2px 4px}
+  .statusbar .right{margin-left:auto}
+  #props{font-size:12px}
+  .field{display:flex; align-items:center; gap:8px; margin-bottom:7px}
+  .field label{width:78px; color:var(--muted); flex:none}
+  .field input[type=text],.field input[type=number],.field select,.field textarea{
+    flex:1; min-width:0; background:var(--panel2); border:1px solid var(--line);
+    color:var(--text); border-radius:5px; padding:5px 7px; outline:none;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
+  .field input[type=color]{
+    width:36px; height:26px; padding:1px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:4px;
+  }
+  .field textarea{height:82px; resize:vertical; font-family:Consolas,"Courier New",monospace; font-size:12px}
+  .field .chk{flex:1; display:flex; gap:12px; align-items:center}
+  .field .chk label{width:auto; display:flex; align-items:center; gap:4px; color:var(--text); cursor:pointer}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .row2 .field{display:block; margin-bottom:0}
+  .row2 .field label{display:block; width:auto; margin-bottom:3px}
+  .row2 .field input{width:100%}
+  .hint{color:var(--muted); font-size:11px; line-height:1.5; margin:6px 0 10px}
+  .type-title{display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:14px; font-weight:600}
+  .badge{background:#22304a; color:var(--accent2); border-radius:4px; padding:1px 6px; font-size:11px}
+  .actions-row{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0}
+  .actions-row .btn{padding:5px 8px; font-size:12px}
+  .empty{color:var(--muted); padding:10px 0; line-height:1.8}
+  .modal{
+    position:fixed; inset:0; background:rgba(4,7,12,.78); z-index:200;
+    display:flex; align-items:center; justify-content:center; padding:28px;
+  }
+  .modal.hidden{display:none}
+  .modal-card{
+    width:min(1080px,96vw); height:min(820px,92vh); background:var(--panel);
+    border:1px solid var(--line); border-radius:10px; display:flex; flex-direction:column;
+    box-shadow:0 30px 90px rgba(0,0,0,.6);
+  }
+  .modal-head{display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line)}
+  .modal-head h2{margin:0; font-size:15px}
+  .modal-head .actions{margin-left:auto; display:flex; gap:6px}
+  .modal-body{flex:1; overflow:auto; padding:12px 16px; background:#0b0e14}
+  #codeOut{
+    margin:0; white-space:pre; font:12px/1.55 Consolas,"Courier New",monospace;
+    color:#cfe0ff; tab-size:4;
+  }
+  #toast{
+    position:fixed; left:50%; bottom:44px; transform:translateX(-50%) translateY(12px);
+    background:#24314a; border:1px solid #3e5478; color:#e8f0ff; padding:8px 14px;
+    border-radius:6px; opacity:0; pointer-events:none; transition:.2s; z-index:300;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  body.preview .topbar,body.preview aside,body.preview .statusbar{display:none}
+  body.preview main{height:100%; grid-template-columns:1fr}
+  body.preview #stageWrap{padding:0}
+  body.preview #grid{display:none}
+  #previewExit{
+    position:fixed; right:16px; top:16px; z-index:400; display:none;
+    background:rgba(20,26,38,.9); border:1px solid var(--line); color:var(--text);
+    border-radius:6px; padding:7px 12px;
+  }
+  body.preview #previewExit{display:block}
+  body.preview .widget{cursor:default}
+  @media (max-width:1100px){
+    :root{--left:190px;--right:270px}
+    .project-name{display:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">ezx-core <span>UI 编辑器</span></div>
+  <input id="projectName" class="project-name" placeholder="项目名">
+  <div class="actions">
+    <button class="btn" id="btnNew">新建</button>
+    <button class="btn" id="btnSample">示例</button>
+    <button class="btn" id="btnOpen">打开</button>
+    <button class="btn" id="btnSave">保存</button>
+    <span class="divider"></span>
+    <button class="btn" id="btnUndo" title="Ctrl+Z">撤销</button>
+    <button class="btn" id="btnRedo" title="Ctrl+Y">重做</button>
+    <span class="divider"></span>
+    <button class="btn" id="btnPreview">预览</button>
+    <button class="btn primary" id="btnCode">生成代码</button>
+  </div>
+  <input type="file" id="fileOpen" accept=".json,application/json" hidden>
+</header>
+
+<main>
+  <aside class="left">
+    <h3>添加控件</h3>
+    <div class="palette">
+      <button class="pal-btn" data-add="button"><b>▭</b><small>按钮</small></button>
+      <button class="pal-btn" data-add="label"><b>T</b><small>文字</small></button>
+      <button class="pal-btn" data-add="panel"><b>▦</b><small>面板</small></button>
+      <button class="pal-btn" data-add="image"><b>◫</b><small>图片</small></button>
+      <button class="pal-btn" data-add="input"><b>⌨</b><small>输入框</small></button>
+    </div>
+    <h3>图层 <span id="layerCount" style="color:var(--muted)"></span></h3>
+    <div id="layers"></div>
+  </aside>
+
+  <section class="workspace">
+    <div id="stageWrap">
+      <div id="stageHolder">
+        <div id="stage">
+          <div id="grid"></div>
+          <div id="widgets"></div>
+          <div id="selection">
+            <div class="box"></div>
+            <div class="handle" data-dir="nw"></div>
+            <div class="handle" data-dir="n"></div>
+            <div class="handle" data-dir="ne"></div>
+            <div class="handle" data-dir="e"></div>
+            <div class="handle" data-dir="se"></div>
+            <div class="handle" data-dir="s"></div>
+            <div class="handle" data-dir="sw"></div>
+            <div class="handle" data-dir="w"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <label><input type="checkbox" id="snapChk" checked> 网格吸附</label>
+      <span>网格 <b id="gridSize">8</b> px</span>
+      <span>缩放
+        <select id="zoomSel">
+          <option value="fit">适应</option>
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="1">100%</option>
+          <option value="1.25">125%</option>
+        </select>
+      </span>
+      <span id="selInfo" class="right">未选中</span>
+    </div>
+  </section>
+
+  <aside class="right">
+    <h3>属性</h3>
+    <div id="props"></div>
+  </aside>
+</main>
+
+<button id="previewExit">退出预览 (Esc)</button>
+
+<div id="codeModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>生成的 C++ 代码</h2>
+      <span class="hint" style="margin:0">保存为 ui_generated.cpp，加到工程里</span>
+      <div class="actions">
+        <button class="btn" id="btnCopy">复制</button>
+        <button class="btn" id="btnDownload">下载 .cpp</button>
+        <button class="btn" id="btnCloseModal">关闭</button>
+      </div>
+    </div>
+    <div class="modal-body"><pre id="codeOut"></pre></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================================
+   ezx-core UI 编辑器
+   - 数据模型：project.widgets[]
+   - 输出：ui_generated.cpp（调用 ui::init / ui::update / ui::draw）
+   ========================================================================= */
+'use strict';
+
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const W_DEFAULT = 1280, H_DEFAULT = 720;
+const LS_KEY = 'ezx-ui-editor-v1';
+
+let project = null;
+let selectedUid = null;
+let zoom = 1;
+let zoomMode = 'fit';
+let snap = true;
+let drag = null;
+let undoStack = [];
+let redoStack = [];
+let lastHistoryAt = 0;
+let generatedCode = '';
+let uidSeq = 1;
+
+/* ------------------------------- 工具 ------------------------------- */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const num = (v, d = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+};
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[c]));
+const uid = () => 'w' + (uidSeq++);
+const deep = o => JSON.parse(JSON.stringify(o));
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+function hexToRgb(hex) {
+  let s = String(hex || '').trim();
+  if (!s.startsWith('#')) s = '#' + s;
+  const m = /^#([0-9a-f]{6})$/i.exec(s);
+  if (!m) return [255, 255, 255];
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function rgbExpr(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return `RGB(${r}, ${g}, ${b})`;
+}
+function cppString(s) {
+  return '"' + String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '')
+    .replace(/\n/g, '\\n') + '"';
+}
+function cppIdent(s, fallback) {
+  let x = String(s || '').trim().replace(/[^A-Za-z0-9_]/g, '_');
+  if (!x || !/^[A-Za-z_]/.test(x)) x = fallback;
+  return x;
+}
+function alignExpr(a) {
+  return a === 'left' ? 'Align::Left' : a === 'right' ? 'Align::Right' : 'Align::Center';
+}
+
+/* ------------------------------- 数据 ------------------------------- */
+const TYPE_LABEL = { button: '按钮', label: '文字', panel: '面板', image: '图片', input: '输入框' };
+const TYPE_ICON = { button: '▭', label: 'T', panel: '▦', image: '◫', input: '⌨' };
+
+function defaults(type) {
+  const base = {
+    uid: uid(), type, id: '', x: 0, y: 0, w: 200, h: 60,
+    visible: true, enabled: true
+  };
+  if (type === 'button') return Object.assign(base, {
+    w: 280, h: 64, text: '按钮', fontSize: 28,
+    textColor: '#eef2ff', normalBg: '#222a3e', hoverBg: '#3e5684',
+    borderColor: '#5c7cc4', borderWidth: 2, radius: 8,
+    disabledBg: '#262a33', disabledText: '#777d8a',
+    handler: '// TODO: 在这里写点击逻辑'
+  });
+  if (type === 'label') return Object.assign(base, {
+    w: 300, h: 44, text: '文字', fontSize: 28, color: '#e8eefc', align: 'center'
+  });
+  if (type === 'panel') return Object.assign(base, {
+    w: 360, h: 220, fillColor: '#1a2030',
+    borderColor: '#3a4a6a', borderWidth: 2, radius: 10
+  });
+  if (type === 'image') return Object.assign(base, {
+    w: 200, h: 200, path: 'res/logo.png', fit: 'fit', previewData: ''
+  });
+  if (type === 'input') return Object.assign(base, {
+    w: 320, h: 60, fontSize: 24, maxLen: 16,
+    digitsOnly: false, password: false,
+    placeholder: '请输入…', value: '',
+    inputBg: '#181e2c', borderColor: '#4a5a7a',
+    focusBorderColor: '#6eaaff', textColor: '#e8eefc',
+    placeholderColor: '#7c8aa5', radius: 8, borderWidth: 2
+  });
+  return base;
+}
+
+function makeWidget(type, x, y) {
+  const w = defaults(type);
+  w.x = Math.round(x);
+  w.y = Math.round(y);
+  if (type === 'button') w.id = uniqueId('BTN');
+  if (type === 'input') w.id = uniqueId('INPUT');
+  return w;
+}
+
+function uniqueId(prefix) {
+  const used = new Set(project ? project.widgets.map(w => String(w.id || '').toUpperCase()) : []);
+  let i = 1;
+  while (used.has((prefix + '_' + i).toUpperCase())) i++;
+  return prefix + '_' + i;
+}
+
+function normalizeProject(p) {
+  const out = Object.assign({
+    version: 1, name: '未命名界面',
+    designW: W_DEFAULT, designH: H_DEFAULT,
+    bg: '#12141c', grid: 8,
+    widgets: []
+  }, p || {});
+  out.designW = clamp(num(out.designW, W_DEFAULT), 320, 3840);
+  out.designH = clamp(num(out.designH, H_DEFAULT), 240, 2160);
+  out.grid = clamp(num(out.grid, 8), 2, 64);
+  out.widgets = Array.isArray(out.widgets) ? out.widgets : [];
+  const seen = new Set();
+  out.widgets.forEach((w, i) => {
+    const d = defaults(w.type || 'button');
+    const merged = Object.assign({}, d, w);
+    Object.assign(w, merged);
+    while (!w.uid || seen.has(w.uid)) w.uid = uid();
+    seen.add(w.uid);
+    w.x = Math.round(num(w.x));
+    w.y = Math.round(num(w.y));
+    w.w = Math.max(8, Math.round(num(w.w, 100)));
+    w.h = Math.max(8, Math.round(num(w.h, 40)));
+    if (w.type === 'button' && !w.id) w.id = 'BTN_' + (i + 1);
+    if (w.type === 'input' && !w.id) w.id = 'INPUT_' + (i + 1);
+  });
+  return out;
+}
+
+function sampleProject() {
+  const p = normalizeProject({
+    name: '我的游戏',
+    designW: 1280, designH: 720,
+    bg: '#12141c', grid: 8,
+    widgets: [
+      { type: 'image', x: 565, y: 55, w: 150, h: 150, path: 'res/logo.png', fit: 'fit' },
+      { type: 'label', x: 0, y: 220, w: 1280, h: 70, text: '我的游戏', fontSize: 52, color: '#f2f6ff', align: 'center' },
+      { type: 'button', id: 'BTN_START', x: 480, y: 320, w: 320, h: 60, text: '开始游戏', fontSize: 28, handler: '// TODO: 开始游戏\n// startGame();' },
+      { type: 'button', id: 'BTN_SETTINGS', x: 480, y: 392, w: 320, h: 60, text: '设置', fontSize: 28 },
+      { type: 'button', id: 'BTN_QUIT', x: 480, y: 464, w: 320, h: 60, text: '退出', fontSize: 28 },
+      { type: 'input', id: 'INPUT_NAME', x: 480, y: 560, w: 320, h: 60, placeholder: '输入昵称…', fontSize: 24, maxLen: 12 }
+    ]
+  });
+  return p;
+}
+
+function blankProject() {
+  return normalizeProject({
+    name: '未命名界面',
+    designW: W_DEFAULT, designH: H_DEFAULT,
+    bg: '#12141c', grid: 8, widgets: []
+  });
+}
+
+/* ------------------------------- 历史 ------------------------------- */
+function historyPush() {
+  const now = Date.now();
+  if (now - lastHistoryAt < 450) return;
+  lastHistoryAt = now;
+  undoStack.push(JSON.stringify(project));
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack = [];
+}
+function historyForce() {
+  undoStack.push(JSON.stringify(project));
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack = [];
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(JSON.stringify(project));
+  project = normalizeProject(JSON.parse(undoStack.pop()));
+  selectedUid = null;
+  renderAll();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(JSON.stringify(project));
+  project = normalizeProject(JSON.parse(redoStack.pop()));
+  selectedUid = null;
+  renderAll();
+}
+
+/* ------------------------------- 保存 ------------------------------- */
+function serializeProject() {
+  const p = deep(project);
+  p.widgets.forEach(w => { delete w.previewData; });
+  return p;
+}
+let saveTimer = null;
+function saveLocal() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(serializeProject()));
+    } catch (e) { /* 忽略 quota 错误 */ }
+  }, 250);
+}
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 200);
+}
+
+/* ------------------------------- 选择 ------------------------------- */
+function selected() {
+  return project.widgets.find(w => w.uid === selectedUid) || null;
+}
+function select(uidValue) {
+  selectedUid = uidValue;
+  renderStage();
+  renderLayers();
+  renderProps();
+  renderSelection();
+}
+
+/* ------------------------------- 渲染舞台 ------------------------------- */
+function gridCss(size) {
+  return `linear-gradient(to right, rgba(255,255,255,.045) 1px, transparent 1px),` +
+         `linear-gradient(to bottom, rgba(255,255,255,.045) 1px, transparent 1px)`;
+}
+function renderStage() {
+  const stage = $('#stage');
+  stage.style.width = project.designW + 'px';
+  stage.style.height = project.designH + 'px';
+  stage.style.background = project.bg;
+  const grid = $('#grid');
+  grid.style.backgroundImage = gridCss(project.grid);
+  grid.style.backgroundSize = `${project.grid}px ${project.grid}px`;
+
+  const box = $('#widgets');
+  box.innerHTML = '';
+  project.widgets.forEach(w => {
+    const el = document.createElement('div');
+    el.className = 'widget w-' + w.type + (w.visible === false ? ' hidden' : '') + (w.enabled === false ? ' disabled' : '');
+    el.dataset.uid = w.uid;
+    Object.assign(el.style, {
+      left: w.x + 'px', top: w.y + 'px', width: w.w + 'px', height: w.h + 'px',
+      borderRadius: (w.radius || 0) + 'px'
+    });
+    if (w.borderWidth) {
+      el.style.border = `${w.borderWidth}px solid ${w.borderColor || '#555'}`;
+    }
+    if (w.type === 'button') {
+      el.style.background = w.normalBg || '#222a3e';
+      el.style.color = w.textColor || '#fff';
+      el.style.fontSize = (w.fontSize || 28) + 'px';
+      el.textContent = w.text || '';
+      if (w.enabled !== false) {
+        el.addEventListener('mouseenter', () => { el.style.background = w.hoverBg || w.normalBg; });
+        el.addEventListener('mouseleave', () => { el.style.background = w.normalBg || '#222a3e'; });
+      }
+    } else if (w.type === 'label') {
+      el.style.color = w.color || '#fff';
+      el.style.fontSize = (w.fontSize || 28) + 'px';
+      el.textContent = w.text || '';
+      el.style.justifyContent = w.align === 'left' ? 'flex-start' : w.align === 'right' ? 'flex-end' : 'center';
+      el.style.textAlign = w.align || 'center';
+    } else if (w.type === 'panel') {
+      el.style.background = w.fillColor || '#1a2030';
+    } else if (w.type === 'image') {
+      if (w.previewData) {
+        const img = document.createElement('img');
+        img.src = w.previewData;
+        img.alt = '';
+        img.style.objectFit = w.fit === 'cover' ? 'cover' : w.fit === 'stretch' ? 'fill' : 'contain';
+        el.appendChild(img);
+      } else {
+        el.textContent = w.path ? ('🖼 ' + w.path) : '图片';
+        el.style.fontSize = '12px';
+        el.style.padding = '6px';
+        el.style.textAlign = 'center';
+      }
+    } else if (w.type === 'input') {
+      const hasText = String(w.value || '').length > 0;
+      el.style.background = w.inputBg || '#181e2c';
+      el.style.color = hasText ? (w.textColor || '#e8eefc') : (w.placeholderColor || '#7c8aa5');
+      el.style.fontSize = (w.fontSize || 24) + 'px';
+      el.style.padding = '0 12px';
+      const ph = document.createElement('span');
+      ph.className = hasText ? '' : 'ph';
+      ph.textContent = hasText ? w.value : (w.placeholder || '');
+      el.appendChild(ph);
+    }
+    box.appendChild(el);
+  });
+
+  // 尺寸/缩放
+  setZoom(zoom, zoomMode);
+  renderSelection();
+  updateLayerCount();
+}
+
+function renderSelection() {
+  const sel = $('#selection');
+  const w = selected();
+  if (!w || document.body.classList.contains('preview') || w.visible === false) {
+    sel.classList.remove('show');
+    return;
+  }
+  sel.classList.add('show');
+  Object.assign(sel.style, { left: w.x + 'px', top: w.y + 'px', width: w.w + 'px', height: w.h + 'px' });
+}
+
+function updateLayerCount() {
+  $('#layerCount').textContent = '(' + project.widgets.length + ')';
+}
+
+/* ------------------------------- 图层 ------------------------------- */
+function widgetName(w) {
+  if (w.type === 'button' || w.type === 'input') return (w.id || TYPE_LABEL[w.type]);
+  if (w.type === 'label') return w.text || '文字';
+  if (w.type === 'image') return w.path || '图片';
+  return TYPE_LABEL[w.type];
+}
+function renderLayers() {
+  const box = $('#layers');
+  box.innerHTML = '';
+  const list = project.widgets.slice().reverse();
+  list.forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'layer' + (w.uid === selectedUid ? ' selected' : '');
+    row.dataset.uid = w.uid;
+    row.innerHTML = `<span class="ico">${TYPE_ICON[w.type] || '?'}</span>
+      <span class="nm">${escHtml(widgetName(w))}</span>
+      <button class="mini" data-action="toggle" title="显示/隐藏">${w.visible === false ? '○' : '●'}</button>
+      <button class="mini" data-action="up" title="上移">↑</button>
+      <button class="mini" data-action="down" title="下移">↓</button>`;
+    box.appendChild(row);
+  });
+  updateLayerCount();
+  $('#selInfo').textContent = selected() ? ('选中：' + widgetName(selected())) : '未选中';
+}
+
+function moveLayer(uidValue, delta) {
+  const i = project.widgets.findIndex(w => w.uid === uidValue);
+  if (i < 0) return;
+  const j = i + delta;
+  if (j < 0 || j >= project.widgets.length) return;
+  historyForce();
+  const [w] = project.widgets.splice(i, 1);
+  project.widgets.splice(j, 0, w);
+  renderStage(); renderLayers(); renderProps(); saveLocal();
+}
+
+/* ------------------------------- 属性 ------------------------------- */
+function inputField(label, prop, value, type = 'text', step = '1', min = '', max = '') {
+  return `<div class="field"><label>${label}</label>
+    <input type="${type}" data-prop="${prop}" value="${escHtml(value)}" step="${step}" ${min !== '' ? `min="${min}"` : ''} ${max !== '' ? `max="${max}"` : ''}>
+  </div>`;
+}
+function colorField(label, prop, value) {
+  return `<div class="field"><label>${label}</label>
+    <input type="color" data-prop="${prop}" value="${escHtml(value || '#ffffff')}">
+    <span class="hint" style="margin:0">${escHtml(value || '')}</span>
+  </div>`;
+}
+function numberField(label, prop, value, min = '', max = '') {
+  return `<div class="field"><label>${label}</label>
+    <input type="number" data-prop="${prop}" value="${escHtml(value)}" min="${min}" max="${max}" step="1">
+  </div>`;
+}
+function checkField(label, prop, checked) {
+  return `<div class="field"><label>${label}</label>
+    <div class="chk"><label><input type="checkbox" data-prop="${prop}" ${checked ? 'checked' : ''}> 是</label></div>
+  </div>`;
+}
+
+function renderProps() {
+  const box = $('#props');
+  const w = selected();
+  if (!w) {
+    box.innerHTML = `
+      <div class="empty">点击画布里的控件来编辑属性；也可以在左边添加控件。</div>
+      <h3 style="margin-top:6px">项目</h3>
+      ${inputField('名称', 'name', project.name)}
+      <div class="row2">
+        ${numberField('设计宽', 'designW', project.designW, 320, 3840)}
+        ${numberField('设计高', 'designH', project.designH, 240, 2160)}
+      </div>
+      ${colorField('背景色', 'bg', project.bg)}
+      ${numberField('网格', 'grid', project.grid, 2, 64)}
+      <div class="hint">设计分辨率建议保持 1280×720；代码里坐标会按这个尺寸生成。</div>
+      <div class="actions-row">
+        <button class="btn" data-action="load-sample">载入示例</button>
+        <button class="btn" data-action="clear-all">清空控件</button>
+      </div>`;
+    return;
+  }
+
+  const typeName = TYPE_LABEL[w.type] || w.type;
+  let html = `<div class="type-title"><span class="badge">${typeName}</span>
+      <span style="color:var(--muted)">${escHtml(w.uid)}</span></div>`;
+  if (w.type === 'button' || w.type === 'input') {
+    html += inputField('C++ ID', 'id', w.id || '');
+    html += `<div class="hint">生成 <code>UI_${escHtml(cppIdent(w.id, 'BTN_1'))}</code>；按钮点击逻辑在 onClick 里。</div>`;
+  }
+  html += `<div class="row2">
+      ${numberField('X', 'x', w.x)}
+      ${numberField('Y', 'y', w.y)}
+      ${numberField('宽', 'w', w.w, 8)}
+      ${numberField('高', 'h', w.h, 8)}
+    </div>`;
+  html += `<div class="field"><label>状态</label><div class="chk">
+      <label><input type="checkbox" data-prop="visible" ${w.visible !== false ? 'checked' : ''}> 可见</label>
+      <label><input type="checkbox" data-prop="enabled" ${w.enabled !== false ? 'checked' : ''}> 可用</label>
+    </div></div>`;
+
+  if (w.type === 'button') {
+    html += inputField('文字', 'text', w.text);
+    html += numberField('字号', 'fontSize', w.fontSize, 8, 200);
+    html += colorField('文字颜色', 'textColor', w.textColor);
+    html += colorField('普通底色', 'normalBg', w.normalBg);
+    html += colorField('悬停底色', 'hoverBg', w.hoverBg);
+    html += colorField('边框颜色', 'borderColor', w.borderColor);
+    html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
+    html += numberField('圆角', 'radius', w.radius, 0, 80);
+    html += `<div class="field"><label>点击逻辑</label></div>
+      <div class="hint">会原样放进 <code>onClick</code> 的 case 里；可以调用你自己的函数。</div>
+      <textarea data-prop="handler" spellcheck="false">${escHtml(w.handler || '')}</textarea>`;
+  } else if (w.type === 'label') {
+    html += inputField('文字', 'text', w.text);
+    html += numberField('字号', 'fontSize', w.fontSize, 8, 200);
+    html += colorField('颜色', 'color', w.color);
+    html += `<div class="field"><label>对齐</label>
+      <select data-prop="align">
+        <option value="left" ${w.align === 'left' ? 'selected' : ''}>左对齐</option>
+        <option value="center" ${w.align === 'center' ? 'selected' : ''}>居中</option>
+        <option value="right" ${w.align === 'right' ? 'selected' : ''}>右对齐</option>
+      </select></div>`;
+  } else if (w.type === 'panel') {
+    html += colorField('填充色', 'fillColor', w.fillColor);
+    html += colorField('边框颜色', 'borderColor', w.borderColor);
+    html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
+    html += numberField('圆角', 'radius', w.radius, 0, 80);
+  } else if (w.type === 'image') {
+    html += inputField('图片路径', 'path', w.path);
+    html += `<div class="field"><label>缩放</label>
+      <select data-prop="fit">
+        <option value="fit" ${w.fit === 'fit' ? 'selected' : ''}>等比完整 (imageFit)</option>
+        <option value="cover" ${w.fit === 'cover' ? 'selected' : ''}>等比铺满 (imageCover)</option>
+        <option value="stretch" ${w.fit === 'stretch' ? 'selected' : ''}>拉伸 (image)</option>
+      </select></div>`;
+    html += `<div class="field"><label>预览图</label>
+      <input type="file" accept="image/*" data-file="preview" style="flex:1;color:var(--muted)">
+    </div>
+    <div class="hint">预览图只用于编辑器显示，不会写进代码；代码只使用上面的路径。</div>`;
+  } else if (w.type === 'input') {
+    html += inputField('占位文字', 'placeholder', w.placeholder);
+    html += inputField('初始文字', 'value', w.value);
+    html += numberField('字号', 'fontSize', w.fontSize, 8, 200);
+    html += numberField('最大长度', 'maxLen', w.maxLen, 0, 200);
+    html += `<div class="field"><label>过滤</label><div class="chk">
+      <label><input type="checkbox" data-prop="digitsOnly" ${w.digitsOnly ? 'checked' : ''}> 只数字</label>
+      <label><input type="checkbox" data-prop="password" ${w.password ? 'checked' : ''}> 密码</label>
+    </div></div>`;
+    html += colorField('背景色', 'inputBg', w.inputBg);
+    html += colorField('边框颜色', 'borderColor', w.borderColor);
+    html += colorField('聚焦边框', 'focusBorderColor', w.focusBorderColor);
+    html += colorField('文字颜色', 'textColor', w.textColor);
+    html += numberField('圆角', 'radius', w.radius, 0, 80);
+    html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
+  }
+
+  html += `<div class="actions-row">
+      <button class="btn" data-action="up">上移</button>
+      <button class="btn" data-action="down">下移</button>
+      <button class="btn" data-action="top">置顶</button>
+      <button class="btn" data-action="bottom">置底</button>
+      <button class="btn" data-action="dup">复制</button>
+      <button class="btn danger" data-action="del">删除</button>
+    </div>`;
+  box.innerHTML = html;
+}
+
+/* ------------------------------- 拖拽/缩放 ------------------------------- */
+function stageScale() {
+  return $('#stage').getBoundingClientRect().width / project.designW;
+}
+function snapVal(v) {
+  return snap ? Math.round(v / project.grid) * project.grid : Math.round(v);
+}
+function pointDesign(e) {
+  const r = $('#stage').getBoundingClientRect();
+  const s = r.width / project.designW;
+  return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
+}
+function startDrag(e, w, mode, dir) {
+  historyPush();
+  drag = {
+    mode, dir, uid: w.uid,
+    sx: e.clientX, sy: e.clientY,
+    ox: w.x, oy: w.y, ow: w.w, oh: w.h
+  };
+  e.preventDefault();
+}
+function onPointerMove(e) {
+  if (!drag) return;
+  const s = stageScale();
+  const dx = (e.clientX - drag.sx) / s;
+  const dy = (e.clientY - drag.sy) / s;
+  const w = project.widgets.find(x => x.uid === drag.uid);
+  if (!w) return;
+  if (drag.mode === 'move') {
+    w.x = snapVal(drag.ox + dx);
+    w.y = snapVal(drag.oy + dy);
+  } else {
+    let x = drag.ox, y = drag.oy, ww = drag.ow, hh = drag.oh;
+    if (drag.dir.includes('e')) ww = Math.max(16, drag.ow + dx);
+    if (drag.dir.includes('s')) hh = Math.max(16, drag.oh + dy);
+    if (drag.dir.includes('w')) { x = drag.ox + dx; ww = drag.ow - dx; }
+    if (drag.dir.includes('n')) { y = drag.oy + dy; hh = drag.oh - dy; }
+    if (ww < 16) { if (drag.dir.includes('w')) x = drag.ox + drag.ow - 16; ww = 16; }
+    if (hh < 16) { if (drag.dir.includes('n')) y = drag.oy + drag.oh - 16; hh = 16; }
+    w.x = snapVal(x); w.y = snapVal(y);
+    w.w = Math.max(8, snapVal(ww)); w.h = Math.max(8, snapVal(hh));
+  }
+  renderStage();
+  syncPosFields();
+}
+function onPointerUp() {
+  if (!drag) return;
+  drag = null;
+  saveLocal();
+  renderProps();
+}
+function syncPosFields() {
+  const w = selected();
+  if (!w) return;
+  $$('#props [data-prop]').forEach(el => {
+    if (['x','y','w','h'].includes(el.dataset.prop)) el.value = w[el.dataset.prop];
+  });
+  $('#selInfo').textContent = '选中：' + widgetName(w);
+}
+
+/* ------------------------------- 添加/删除 ------------------------------- */
+function addWidget(type) {
+  const w = makeWidget(type, 0, 0);
+  w.x = snapVal((project.designW - w.w) / 2) + (project.widgets.length % 5) * 18;
+  w.y = snapVal((project.designH - w.h) / 2) + (project.widgets.length % 5) * 18;
+  historyForce();
+  project.widgets.push(w);
+  selectedUid = w.uid;
+  renderAll();
+  toast('已添加：' + TYPE_LABEL[type]);
+}
+function deleteSelected() {
+  const w = selected(); if (!w) return;
+  historyForce();
+  project.widgets = project.widgets.filter(x => x.uid !== w.uid);
+  selectedUid = null;
+  renderAll();
+}
+function duplicateSelected() {
+  const w = selected(); if (!w) return;
+  historyForce();
+  const copy = deep(w);
+  copy.uid = uid();
+  copy.x += 20; copy.y += 20;
+  if (copy.type === 'button') copy.id = uniqueId('BTN');
+  if (copy.type === 'input') copy.id = uniqueId('INPUT');
+  project.widgets.push(copy);
+  selectedUid = copy.uid;
+  renderAll();
+}
+
+/* ------------------------------- 属性修改 ------------------------------- */
+function setWidgetProp(w, prop, value) {
+  if (['x','y','w','h','fontSize','maxLen','borderWidth','radius'].includes(prop)) {
+    value = Math.round(num(value));
+    if (prop === 'w' || prop === 'h') value = Math.max(8, value);
+    if (prop === 'maxLen') value = clamp(value, 0, 500);
+    if (prop === 'borderWidth') value = clamp(value, 0, 20);
+    if (prop === 'radius') value = clamp(value, 0, 200);
+  }
+  if (prop === 'visible' || prop === 'enabled' || prop === 'digitsOnly' || prop === 'password') {
+    value = !!value;
+  }
+  w[prop] = value;
+}
+function onPropInput(e) {
+  const el = e.target.closest('[data-prop]');
+  if (!el) return;
+  const prop = el.dataset.prop;
+  let value = el.type === 'checkbox' ? el.checked : el.value;
+  const w = selected();
+  historyPush();
+  if (!w) {
+    if (['name','designW','designH','bg','grid'].includes(prop)) {
+      if (['designW','designH','grid'].includes(prop)) value = Math.round(num(value));
+      project[prop] = value;
+      if (prop === 'designW') project.designW = clamp(num(value, 1280), 320, 3840);
+      if (prop === 'designH') project.designH = clamp(num(value, 720), 240, 2160);
+      if (prop === 'grid') project.grid = clamp(num(value, 8), 2, 64);
+      if (prop === 'name') $('#projectName').value = project.name;
+      $('#gridSize').textContent = project.grid;
+      renderStage();
+      fitIfNeeded();
+      saveLocal();
+    }
+    return;
+  }
+  setWidgetProp(w, prop, value);
+  renderStage();
+  if (prop === 'id' || prop === 'text' || prop === 'placeholder') renderLayers();
+  saveLocal();
+}
+
+/* ------------------------------- 缩放 ------------------------------- */
+function setZoom(z, mode) {
+  zoom = z;
+  zoomMode = mode || 'manual';
+  const stage = $('#stage');
+  stage.style.transform = `scale(${zoom})`;
+  $('#stageHolder').style.width = (project.designW * zoom) + 'px';
+  $('#stageHolder').style.height = (project.designH * zoom) + 'px';
+  $('#zoomSel').value = mode === 'fit' ? 'fit' : String(zoom);
+}
+function fitIfNeeded() {
+  if (zoomMode !== 'fit') return;
+  const wrap = $('#stageWrap');
+  const z = Math.min((wrap.clientWidth - 48) / project.designW, (wrap.clientHeight - 48) / project.designH, 1);
+  setZoom(Math.max(0.1, z), 'fit');
+}
+function applyZoomSelection() {
+  const v = $('#zoomSel').value;
+  if (v === 'fit') fitIfNeeded();
+  else setZoom(Number(v), 'manual');
+}
+
+/* ------------------------------- 代码生成 ------------------------------- */
+function generateCode(p) {
+  const W = p.designW, H = p.designH;
+  const widgets = p.widgets.map(w => Object.assign({}, w));
+  const buttons = widgets.filter(w => w.type === 'button');
+  const inputs = widgets.filter(w => w.type === 'input');
+  const images = widgets.filter(w => w.type === 'image' && String(w.path || '').trim() !== '');
+  const usedIds = new Set();
+
+  buttons.forEach((w, i) => {
+    let base = cppIdent(w.id, 'BTN_' + (i + 1));
+    let id = 'UI_' + base;
+    let n = 2;
+    while (usedIds.has(id)) id = 'UI_' + base + '_' + (n++);
+    usedIds.add(id);
+    w._id = id;
+  });
+  inputs.forEach((w, i) => { w._var = 'g_input_' + (i + 1); });
+  images.forEach((w, i) => { w._var = 'g_img_' + (i + 1); });
+
+  const hasBox = widgets.some(w => ['button','panel','input'].includes(w.type));
+  const hasFrame = widgets.some(w => ['button','panel','input'].includes(w.type) && Number(w.borderWidth || 0) > 0);
+  const hasInput = inputs.length > 0;
+
+  const L = [];
+  const a = (s = '') => L.push(s);
+  const i4 = (s = '') => L.push('    ' + s);
+  const i8 = (s = '') => L.push('        ' + s);
+  const i12 = (s = '') => L.push('            ' + s);
+
+  a('// ============================================================');
+  a('//  ui_generated.cpp');
+  a('//  由 ezx-core UI 编辑器生成');
+  a('//  设计分辨率: ' + W + ' x ' + H);
+  a('//');
+  a('//  用法（在 main 里）：');
+  a('//      ui::init();                 // 建窗后调用一次');
+  a('//      ...');
+  a('//      ui::update(in, vp);         // 每帧');
+  a('//      ui::draw(vp, in);           // 每帧，beginFrame 之后');
+  a('// ============================================================');
+  a('#include "easyx_core.h"');
+  if (hasInput) a('#include <chrono>');
+  a('');
+  a('namespace ui {');
+  a('');
+  i4('using namespace ezx;');
+  a('');
+
+  if (buttons.length) {
+    i4('enum UiId');
+    i4('{');
+    buttons.forEach((w, i) => {
+      i8(w._id + ' = ' + (i + 1) + (i === buttons.length - 1 ? '' : ','));
+    });
+    i4('};');
+    a('');
+  }
+
+  images.forEach(w => { i4('static Image ' + w._var + ';'); });
+  inputs.forEach(w => { i4('static TextInput ' + w._var + ';'); });
+  if (images.length || inputs.length) a('');
+
+  if (hasBox) {
+    i4('static void fillRound(const Rect& r, int radius, COLORREF color)');
+    i4('{');
+    i8('::setfillcolor(color);');
+    i8('if (radius > 0)');
+    i8('    ::solidroundrect(r.x, r.y, r.right(), r.bottom(), radius * 2, radius * 2);');
+    i8('else');
+    i8('    ::solidrectangle(r.x, r.y, r.right() - 1, r.bottom() - 1);');
+    i4('}');
+    a('');
+  }
+  if (hasFrame) {
+    i4('static void frameRound(const Rect& r, int radius, int width, COLORREF color)');
+    i4('{');
+    i8('if (width <= 0) return;');
+    i8('::setlinecolor(color);');
+    i8('::setlinestyle(PS_SOLID, width);');
+    i8('if (radius > 0)');
+    i8('    ::roundrect(r.x, r.y, r.right(), r.bottom(), radius * 2, radius * 2);');
+    i8('else');
+    i8('    ::rectangle(r.x, r.y, r.right(), r.bottom());');
+    i8('::setlinestyle(PS_SOLID, 1);');
+    i4('}');
+    a('');
+  }
+  if (hasInput) {
+    i4('static bool caretOn()');
+    i4('{');
+    i8('using namespace std::chrono;');
+    i8('const auto ms = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();');
+    i8('return (ms / 500) % 2 == 0;');
+    i4('}');
+    a('');
+  }
+
+  // init
+  i4('void init()');
+  i4('{');
+  let initLines = 0;
+  images.forEach(w => {
+    if (String(w.path || '').trim()) {
+      i8(w._var + '.load(assetPath(' + cppString(w.path) + '));');
+      initLines++;
+    }
+  });
+  inputs.forEach(w => {
+    i8(w._var + '.maxLen = ' + Math.max(0, Math.round(num(w.maxLen, 16))) + ';');
+    i8(w._var + '.digitsOnly = ' + (w.digitsOnly ? 'true' : 'false') + ';');
+    i8(w._var + '.password = ' + (w.password ? 'true' : 'false') + ';');
+    if (String(w.value || '').length) i8(w._var + '.setText(' + cppString(w.value) + ');');
+    initLines += 4;
+  });
+  if (!initLines) i8('// 没有需要初始化的图片或输入框');
+  i4('}');
+  a('');
+
+  // onClick
+  i4('void onClick(int id)');
+  i4('{');
+  if (buttons.length) {
+    i8('switch (id)');
+    i8('{');
+    buttons.forEach(w => {
+      i8('case ' + w._id + ':');
+      const comment = '        // 点击“' + String(w.text || w.id || '按钮').replace(/\r?\n/g, ' ') + '”';
+      L.push(comment);
+      const body = String(w.handler || '').replace(/\r/g, '').split('\n');
+      let wrote = false;
+      body.forEach(line => {
+        if (line.trim() !== '') { L.push('            ' + line); wrote = true; }
+      });
+      if (!wrote) L.push('            // TODO: 在这里写点击逻辑');
+      L.push('            break;');
+    });
+    i8('default:');
+    i8('    break;');
+    i8('}');
+  } else {
+    i8('(void)id;');
+  }
+  i4('}');
+  a('');
+
+  // update
+  const visibleInputs = inputs.filter(w => w.visible !== false && w.enabled !== false);
+  const clickButtons = buttons.filter(w => w.visible !== false && w.enabled !== false);
+  i4('void update(const Input& in, const Viewport& vp)');
+  i4('{');
+  i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
+  i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
+  if (!visibleInputs.length && !clickButtons.length) {
+    i8('(void)inArea;');
+    i8('(void)m;');
+    i8('(void)in;');
+    a('');
+  } else {
+    a('');
+  }
+  if (visibleInputs.length) {
+    i8('// 输入框焦点');
+    i8('if (in.clicked())');
+    i8('{');
+    visibleInputs.forEach(w => {
+      i12(w._var + '.focused = inArea && Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }.contains(m);');
+      i12('if (' + w._var + '.focused)');
+      i12('    ' + w._var + '.placeCursor(vp, Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }, ' + Math.round(num(w.fontSize, 24)) + ', in.pos().x);');
+    });
+    i8('}');
+    visibleInputs.forEach(w => { i8(w._var + '.update(in);'); });
+    a('');
+  }
+  if (clickButtons.length) {
+    i8('// 按钮点击（后画的优先）');
+    i8('if (in.clicked() && inArea)');
+    i8('{');
+    clickButtons.slice().reverse().forEach(w => {
+      i12('if (Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }.contains(m)) { onClick(' + w._id + '); return; }');
+    });
+    i8('}');
+  }
+  i4('}');
+  a('');
+
+  // draw
+  i4('void draw(const Viewport& vp, const Input& in)');
+  i4('{');
+  i8('const bool inArea = vp.inside(in.pos().x, in.pos().y);');
+  i8('const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };');
+  let usedM = false;
+  let wroteDraw = false;
+  widgets.forEach(w => {
+    if (w.visible === false) return;
+    wroteDraw = true;
+    const R = 'Rect{ ' + [w.x,w.y,w.w,w.h].join(', ') + ' }';
+    if (w.type === 'panel') {
+      i8('// 面板');
+      i8('fillRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + rgbExpr(w.fillColor) + ');');
+      if (Number(w.borderWidth || 0) > 0)
+        i8('frameRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + Math.round(num(w.borderWidth, 0)) + ', ' + rgbExpr(w.borderColor) + ');');
+      a('');
+    } else if (w.type === 'label') {
+      i8('// 文字');
+      i8('vp.textIn(' + R + ', ' + cppString(String(w.text || '').replace(/\r?\n/g, ' ')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.color) + ', ' + alignExpr(w.align) + ');');
+      a('');
+    } else if (w.type === 'image') {
+      if (!String(w.path || '').trim()) {
+        i8('// 图片未设置路径，跳过');
+        a('');
+        return;
+      }
+      i8('// 图片');
+      if (w.fit === 'cover') i8('vp.imageCover(' + w._var + ', ' + R + ');');
+      else if (w.fit === 'stretch') i8('vp.image(' + w._var + ', ' + R + ');');
+      else i8('vp.imageFit(' + w._var + ', ' + R + ');');
+      a('');
+    } else if (w.type === 'button') {
+      usedM = true;
+      const radius = Math.round(num(w.radius, 0));
+      const bw = Math.round(num(w.borderWidth, 0));
+      if (w.enabled === false) {
+        i8('// 按钮：' + String(w.text || w.id || ''));
+        i8('{');
+        i12('fillRound(' + R + ', ' + radius + ', ' + rgbExpr(w.disabledBg || '#262a33') + ');');
+        if (bw > 0) i12('frameRound(' + R + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
+        i12('vp.textIn(' + R + ', ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.disabledText || '#777d8a') + ', Align::Center);');
+        i8('}');
+      } else {
+        i8('// 按钮：' + String(w.text || w.id || ''));
+        i8('{');
+        i12('const bool hover = ' + R + '.contains(m);');
+        i12('fillRound(' + R + ', ' + radius + ', hover ? ' + rgbExpr(w.hoverBg) + ' : ' + rgbExpr(w.normalBg) + ');');
+        if (bw > 0) i12('frameRound(' + R + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
+        i12('vp.textIn(' + R + ', ' + cppString(String(w.text || '')) + ', ' + Math.round(num(w.fontSize, 28)) + ', ' + rgbExpr(w.textColor) + ', Align::Center);');
+        i8('}');
+      }
+      a('');
+    } else if (w.type === 'input') {
+      const radius = Math.round(num(w.radius, 0));
+      const bw = Math.round(num(w.borderWidth, 0));
+      i8('// 输入框：' + String(w.id || ''));
+      i8('fillRound(' + R + ', ' + radius + ', ' + rgbExpr(w.inputBg) + ');');
+      if (bw > 0) {
+        i8('frameRound(' + R + ', ' + radius + ', ' + bw + ', ' + w._var + '.focused ? ' + rgbExpr(w.focusBorderColor) + ' : ' + rgbExpr(w.borderColor) + ');');
+      }
+      if (String(w.placeholder || '').length)
+        i8('if (' + w._var + '.text.empty())');
+      if (String(w.placeholder || '').length)
+        i12('vp.textIn(' + R + '.inset(12), ' + cppString(w.placeholder) + ', ' + Math.round(num(w.fontSize, 24)) + ', ' + rgbExpr(w.placeholderColor) + ', Align::Left);');
+      i8(w._var + '.draw(vp, ' + R + ', ' + Math.round(num(w.fontSize, 24)) + ', ' + rgbExpr(w.textColor) + ', caretOn());');
+      a('');
+    }
+  });
+  if (!wroteDraw) i8('// 没有可见控件');
+  if (!usedM && !clickButtons.length && !inputs.length) {
+    // m 可能只用于按钮 hover；如果没有任何按钮，标签/输入框不使用 m
+    // 统一加 void 避免 /W4 警告
+  }
+  if (!usedM) i8('(void)m;');
+  i4('}');
+  a('');
+  a('} // namespace ui');
+  a('');
+  a('// 在 main 中调用：');
+  a('//   ui::init();');
+  a('//   ui::update(in, vp);');
+  a('//   ui::draw(vp, in);');
+
+  return L.join('\n') + '\n';
+}
+
+/* ------------------------------- 代码弹窗 ------------------------------- */
+function openCode() {
+  generatedCode = generateCode(project);
+  $('#codeOut').textContent = generatedCode;
+  $('#codeModal').classList.remove('hidden');
+}
+function closeCode() { $('#codeModal').classList.add('hidden'); }
+async function copyCode() {
+  try {
+    await navigator.clipboard.writeText(generatedCode);
+    toast('已复制到剪贴板');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = generatedCode;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast('已复制'); } catch (_) { toast('复制失败，请手动选择'); }
+    ta.remove();
+  }
+}
+
+/* ------------------------------- 初始化/事件 ------------------------------- */
+function renderAll() {
+  $('#projectName').value = project.name || '';
+  $('#gridSize').textContent = project.grid;
+  renderStage();
+  renderLayers();
+  renderProps();
+  fitIfNeeded();
+  saveLocal();
+}
+
+function loadProject(p, silent) {
+  project = normalizeProject(p);
+  selectedUid = null;
+  undoStack = [];
+  redoStack = [];
+  zoomMode = 'fit';
+  renderAll();
+  if (!silent) toast('已载入');
+}
+
+function init() {
+  const params = new URLSearchParams(location.search);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { saved = null; }
+  project = saved ? normalizeProject(saved) : sampleProject();
+  if (params.has('empty')) project = blankProject();
+
+  // 项目名
+  $('#projectName').addEventListener('input', e => {
+    project.name = e.target.value;
+    saveLocal();
+  });
+
+  // 工具栏
+  $('#btnNew').addEventListener('click', () => {
+    if (project.widgets.length && !confirm('新建会清空当前界面，继续？')) return;
+    loadProject(blankProject());
+  });
+  $('#btnSample').addEventListener('click', () => {
+    if (project.widgets.length && !confirm('用示例替换当前界面？')) return;
+    loadProject(sampleProject());
+  });
+  $('#btnOpen').addEventListener('click', () => $('#fileOpen').click());
+  $('#fileOpen').addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try { loadProject(JSON.parse(r.result)); }
+      catch (err) { toast('JSON 解析失败'); }
+    };
+    r.readAsText(f, 'utf-8');
+    e.target.value = '';
+  });
+  $('#btnSave').addEventListener('click', () => {
+    download((project.name || 'ui') + '.json', JSON.stringify(serializeProject(), null, 2), 'application/json');
+  });
+  $('#btnUndo').addEventListener('click', undo);
+  $('#btnRedo').addEventListener('click', redo);
+  $('#btnCode').addEventListener('click', openCode);
+  $('#btnPreview').addEventListener('click', () => {
+    document.body.classList.toggle('preview');
+    setTimeout(fitIfNeeded, 0);
+  });
+  $('#previewExit').addEventListener('click', () => document.body.classList.remove('preview'));
+
+  // 添加
+  $$('.pal-btn').forEach(b => b.addEventListener('click', () => addWidget(b.dataset.add)));
+
+  // 图层
+  $('#layers').addEventListener('click', e => {
+    const row = e.target.closest('.layer');
+    if (!row) return;
+    const uidValue = row.dataset.uid;
+    const action = e.target.dataset.action;
+    if (action) {
+      const w = project.widgets.find(x => x.uid === uidValue);
+      if (!w) return;
+      if (action === 'toggle') { historyPush(); w.visible = w.visible === false; renderStage(); renderLayers(); saveLocal(); }
+      else if (action === 'up') moveLayer(uidValue, 1);
+      else if (action === 'down') moveLayer(uidValue, -1);
+      return;
+    }
+    select(uidValue);
+  });
+
+  // 画布
+  $('#stage').addEventListener('pointerdown', e => {
+    if (document.body.classList.contains('preview')) return;
+    const handle = e.target.closest('.handle');
+    if (handle) {
+      const w = selected();
+      if (w) startDrag(e, w, 'resize', handle.dataset.dir);
+      return;
+    }
+    const el = e.target.closest('.widget');
+    if (!el) { select(null); return; }
+    const w = project.widgets.find(x => x.uid === el.dataset.uid);
+    if (!w) return;
+    select(w.uid);
+    if (e.button === 0) startDrag(e, w, 'move');
+  });
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+
+  // 属性
+  $('#props').addEventListener('input', onPropInput);
+  $('#props').addEventListener('change', e => {
+    if (e.target.dataset.file === 'preview') {
+      const w = selected();
+      const f = e.target.files[0];
+      if (!w || !f) return;
+      const r = new FileReader();
+      r.onload = () => { w.previewData = r.result; renderStage(); };
+      r.readAsDataURL(f);
+      return;
+    }
+    if (e.target.dataset.prop) onPropInput(e);
+  });
+  $('#props').addEventListener('click', e => {
+    const action = e.target.dataset.action;
+    if (!action) return;
+    const w = selected();
+    if (action === 'load-sample') { loadProject(sampleProject()); return; }
+    if (action === 'clear-all') {
+      if (!confirm('清空所有控件？')) return;
+      historyForce(); project.widgets = []; selectedUid = null; renderAll(); return;
+    }
+    if (!w) return;
+    if (action === 'del') deleteSelected();
+    else if (action === 'dup') duplicateSelected();
+    else if (action === 'up') moveLayer(w.uid, 1);
+    else if (action === 'down') moveLayer(w.uid, -1);
+    else if (action === 'top') { historyForce(); const i = project.widgets.indexOf(w); project.widgets.splice(i, 1); project.widgets.push(w); renderAll(); }
+    else if (action === 'bottom') { historyForce(); const i = project.widgets.indexOf(w); project.widgets.splice(i, 1); project.widgets.unshift(w); renderAll(); }
+  });
+
+  // 网格/缩放
+  $('#snapChk').addEventListener('change', e => { snap = e.target.checked; });
+  $('#zoomSel').addEventListener('change', applyZoomSelection);
+  window.addEventListener('resize', fitIfNeeded);
+
+  // 代码弹窗
+  $('#btnCopy').addEventListener('click', copyCode);
+  $('#btnDownload').addEventListener('click', () => download('ui_generated.cpp', generatedCode, 'text/plain;charset=utf-8'));
+  $('#btnCloseModal').addEventListener('click', closeCode);
+  $('#codeModal').addEventListener('click', e => { if (e.target.id === 'codeModal') closeCode(); });
+
+  // 键盘
+  window.addEventListener('keydown', e => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.key === 'Escape') {
+      if (document.body.classList.contains('preview')) document.body.classList.remove('preview');
+      else if (!$('#codeModal').classList.contains('hidden')) closeCode();
+      else select(null);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); redo(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); download((project.name || 'ui') + '.json', JSON.stringify(serializeProject(), null, 2), 'application/json'); return; }
+    const w = selected();
+    if (!w) return;
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); return; }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+      e.preventDefault();
+      historyPush();
+      if (e.key === 'ArrowLeft') w.x -= step;
+      if (e.key === 'ArrowRight') w.x += step;
+      if (e.key === 'ArrowUp') w.y -= step;
+      if (e.key === 'ArrowDown') w.y += step;
+      renderStage(); renderSelection(); syncPosFields(); saveLocal();
+    }
+  });
+
+  // 拖动时防止选中文字
+  document.addEventListener('selectstart', e => { if (drag) e.preventDefault(); });
+
+  renderAll();
+
+  // 调试用：?select=BTN_START 打开时自动选中某个控件
+  const selParam = new URLSearchParams(location.search).get('select');
+  if (selParam) {
+    const w = project.widgets.find(x => String(x.id || '') === selParam);
+    if (w) select(w.uid);
+  }
+
+  // 测试用：?selftest=1 跑一组核心交互断言
+  if (params.has('selftest')) {
+    const results = [];
+    const ok = (name, cond) => results.push((cond ? 'PASS ' : 'FAIL ') + name);
+
+    const np = normalizeProject({ designW: 800, designH: 600, widgets: [{ type: 'button', x: 123, y: 45, w: 100, h: 50, text: 'x' }] });
+    ok('normalize 保留 x', np.widgets[0].x === 123 && np.widgets[0].w === 100);
+
+    const code = generateCode(sampleProject());
+    ok('生成 enum', code.includes('UI_BTN_START'));
+    ok('生成输入框光标', code.includes('placeCursor'));
+    ok('每个按钮独立 hover 作用域', (code.match(/const bool hover/g) || []).length === 3);
+
+    const beforeCount = project.widgets.length;
+    addWidget('label');
+    ok('添加控件', project.widgets.length === beforeCount + 1);
+
+    const testW = project.widgets[project.widgets.length - 1];
+    select(testW.uid);
+    const el = document.querySelector('.widget[data-uid="' + testW.uid + '"]');
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const ox = testW.x;
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: r.left + 5, clientY: r.top + 5 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 45, clientY: r.top + 25 }));
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      ok('拖拽改变位置', project.widgets.find(w => w.uid === testW.uid).x !== ox);
+    } else {
+      ok('拖拽改变位置', false);
+    }
+
+    select(testW.uid);
+    const sel = document.querySelector('.handle[data-dir="se"]');
+    if (sel) {
+      const r = sel.getBoundingClientRect();
+      const ow = testW.w;
+      sel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: r.left + 4, clientY: r.top + 4 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 44, clientY: r.top + 24 }));
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      ok('缩放改变宽高', project.widgets.find(w => w.uid === testW.uid).w !== ow);
+    } else {
+      ok('缩放改变宽高', false);
+    }
+
+    const body = results.join('\n');
+    document.body.innerHTML = '<pre id="selftest">' + escHtml(body) + '</pre>';
+    return;
+  }
+
+  // 测试用：?dumpcode=1 只输出生成的代码，方便命令行验证
+  if (params.has('dumpcode')) {
+    const code = generateCode(project);
+    document.body.innerHTML = '<pre id="dumpcode">' + escHtml(code) + '</pre>';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

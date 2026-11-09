@@ -215,6 +215,19 @@ struct UiButton
 
 完整例子见 `demo_main.cpp`。
 
+## 可视化 UI 编辑器
+
+不想手写坐标？双击 **`editor/ui_editor.html`**，用 Edge/Chrome 打开（单文件、离线、零依赖）：
+
+- 拖按钮/文字/面板/图片/输入框，拖拽移动、八向缩放、8px 网格吸附；
+- 右侧调坐标、颜色、字号、圆角、边框、点击逻辑；
+- 一键生成 `ui_generated.cpp`，按钮点击逻辑以 `case` 留好接口；
+- 保存/打开 JSON 工程，支持撤销/重做、图层顺序。
+
+![UI 编辑器](editor/editor_preview.png)
+
+使用说明见 **[editor/README.md](editor/README.md)**。
+
 ## 编译
 
 **最简单**：双击包里的 `build_demo.bat`，它会自动找到 VS + EasyX，用 `/MT /utf-8 /D_UNICODE` 编译出 `demo.exe`。
@@ -233,6 +246,7 @@ VS 里直接新建空项目、加两个 `.cpp` + 头文件、`F5` 即可。图�
 
 - 本文件：怎么用
 - **Directory.Build.targets**：可选，复制到项目根自动适配 `/MT`、`/utf-8`、库目录
+- **[editor/README.md](editor/README.md)**：可视化 UI 编辑器使用说明（拖控件、生成 C++、点击接口）
 - **[详细教程.md](详细教程.md)**：零基础版，从 C++ 语法讲到图片资源、中文输入、窗口设置、逐段拆 demo
 - **[项目原理.md](项目原理.md)**：内部原理图解（消息循环、双缓冲、窗口重建、编码、IME、alpha、内存）
 - **[使用说明.md](使用说明.md)**：每部分为什么这么设计、常见坑、改造配方
