@@ -42,6 +42,7 @@ namespace ui {
     static int g_page = UI_PAGE_MAIN;
     static Image g_bg;
     static Image g_p0_img_1;
+    static Image g_p1_bg_1;
     static Image g_p1_icon_1;
     static TextInput g_p0_input_1;
 
@@ -99,6 +100,7 @@ namespace ui {
         g_p0_input_1.maxLen = 12;
         g_p0_input_1.digitsOnly = false;
         g_p0_input_1.password = false;
+        g_p1_bg_1.load(assetPath("res/bg.png"));
         g_p1_icon_1.load(assetPath("res/logo.png"));
         g_page = UI_PAGE_MAIN;
     }
@@ -259,6 +261,7 @@ namespace ui {
         const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };
         // 面板
         fillRound(pctRect(vp, 0.3047, 0.1389, 0.3906, 0.7222), 12, RGB(26, 32, 48));
+        vp.image(g_p1_bg_1, pctRect(vp, 0.3047, 0.1389, 0.3906, 0.7222));
         frameRound(pctRect(vp, 0.3047, 0.1389, 0.3906, 0.7222), 12, 2, RGB(58, 74, 106));
 
         // 文字

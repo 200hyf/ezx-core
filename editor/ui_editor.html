@@ -106,6 +106,8 @@
   #grid{position:absolute; inset:0; pointer-events:none; opacity:.7}
   #widgets{position:absolute; inset:0}
   .widget{position:absolute; user-select:none; cursor:move; overflow:hidden}
+  .widget-bg{position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; z-index:0}
+  .widget > *:not(.widget-bg){position:relative; z-index:1}
   .widget.hidden{display:none}
   .widget.disabled{opacity:.65}
   .w-button{display:flex; align-items:center; justify-content:center; text-align:center; white-space:pre-wrap}
@@ -186,7 +188,7 @@
     border-radius:6px; opacity:0; pointer-events:none; transition:.2s; z-index:300;
   }
   #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
-  body.preview .topbar,body.preview aside,body.preview .statusbar{display:none}
+  body.preview .topbar,body.preview aside,body.preview .statusbar,body.preview .page-tabs{display:none}
   body.preview main{height:100%; grid-template-columns:1fr}
   body.preview #stageWrap{padding:0}
   body.preview #grid{display:none}
@@ -197,6 +199,17 @@
   }
   body.preview #previewExit{display:block}
   body.preview .widget{cursor:default}
+  body.preview .w-button{cursor:pointer}
+  #previewLog{
+    position:fixed; left:16px; bottom:16px; z-index:400; display:none;
+    width:min(560px,80vw); max-height:170px; overflow:auto;
+    background:rgba(14,19,29,.92); border:1px solid #3a4a6a; border-radius:8px;
+    padding:8px 10px; color:#cfe0ff; font:12px/1.55 Consolas,"Microsoft YaHei",monospace;
+    box-shadow:0 10px 30px rgba(0,0,0,.4);
+  }
+  body.preview #previewLog{display:block}
+  #previewLog .plog{padding:2px 0; border-bottom:1px solid rgba(255,255,255,.05)}
+  #previewLog .plog:last-child{border-bottom:0}
   @media (max-width:1100px){
     :root{--left:190px;--right:270px}
     .project-name{display:none}
@@ -282,6 +295,7 @@
 </main>
 
 <button id="previewExit">退出预览 (Esc)</button>
+<div id="previewLog"></div>
 
 <div id="codeModal" class="modal hidden">
   <div class="modal-card">
@@ -324,6 +338,7 @@ let redoStack = [];
 let lastHistoryAt = 0;
 let generatedCode = '';
 let uidSeq = 1;
+let previewReturnPage = -1;
 
 /* ------------------------------- 工具 ------------------------------- */
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -337,12 +352,12 @@ const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({
 const uid = () => 'w' + (uidSeq++);
 const deep = o => JSON.parse(JSON.stringify(o));
 
-function toast(msg) {
+function toast(msg, ms = 1800) {
   const t = $('#toast');
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove('show'), 1800);
+  toast._t = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 function hexToRgb(hex) {
@@ -394,6 +409,7 @@ function defaults(type) {
     borderColor: '#5c7cc4', borderWidth: 2, radius: 8,
     disabledBg: '#262a33', disabledText: '#777d8a',
     iconPath: '', iconSize: 40, iconGap: 10, iconPos: 'left', iconPreviewData: '',
+    bgImage: '', bgPreviewData: '',
     target: '',
     handler: '// TODO: 在这里写点击逻辑'
   });
@@ -402,7 +418,8 @@ function defaults(type) {
   });
   if (type === 'panel') return Object.assign(base, {
     w: 360, h: 220, fillColor: '#1a2030',
-    borderColor: '#3a4a6a', borderWidth: 2, radius: 10
+    borderColor: '#3a4a6a', borderWidth: 2, radius: 10,
+    bgImage: '', bgPreviewData: ''
   });
   if (type === 'image') return Object.assign(base, {
     w: 200, h: 200, path: 'res/logo.png', fit: 'fit', previewData: ''
@@ -413,7 +430,8 @@ function defaults(type) {
     placeholder: '请输入…', value: '',
     inputBg: '#181e2c', borderColor: '#4a5a7a',
     focusBorderColor: '#6eaaff', textColor: '#e8eefc',
-    placeholderColor: '#7c8aa5', radius: 8, borderWidth: 2
+    placeholderColor: '#7c8aa5', radius: 8, borderWidth: 2,
+    bgImage: '', bgPreviewData: ''
   });
   return base;
 }
@@ -511,7 +529,7 @@ function sampleProject() {
       {
         key: 'p2', id: 'SETTINGS', name: '设置页',
         widgets: [
-          { type: 'panel', x: 390, y: 100, w: 500, h: 520, fillColor: '#1a2030', borderColor: '#3a4a6a', borderWidth: 2, radius: 12 },
+          { type: 'panel', x: 390, y: 100, w: 500, h: 520, fillColor: '#1a2030', borderColor: '#3a4a6a', borderWidth: 2, radius: 12, bgImage: 'res/bg.png' },
           { type: 'label', x: 390, y: 140, w: 500, h: 70, text: '设置', fontSize: 44, color: '#f2f6ff', align: 'center' },
           { type: 'button', id: 'BTN_BACK', x: 480, y: 500, w: 320, h: 60, text: '返回', fontSize: 28, target: 'p1', iconPath: 'res/logo.png', iconSize: 36, iconGap: 8, iconPos: 'left' }
         ]
@@ -562,7 +580,7 @@ function redo() {
 function serializeProject() {
   const p = deep(project);
   (p.pages || []).forEach(pg => {
-    (pg.widgets || []).forEach(w => { delete w.previewData; delete w.iconPreviewData; });
+    (pg.widgets || []).forEach(w => { delete w.previewData; delete w.iconPreviewData; delete w.bgPreviewData; });
   });
   delete p.widgets;
   delete p.bgPreviewData;
@@ -624,7 +642,7 @@ function renderPageTabs() {
   add.addEventListener('click', addPage);
   box.appendChild(add);
 }
-function switchPage(i) {
+function switchPage(i, silent) {
   i = clamp(Math.round(i), 0, project.pages.length - 1);
   if (i === project.activePage) return;
   syncPageWidgets();
@@ -632,7 +650,7 @@ function switchPage(i) {
   project.widgets = project.pages[i].widgets;
   selectedUid = null;
   renderAll();
-  toast('切换到：' + project.pages[i].name);
+  if (!silent) toast('切换到：' + project.pages[i].name);
 }
 function addPage() {
   syncPageWidgets();
@@ -674,11 +692,102 @@ function renamePage(i) {
   saveLocal();
 }
 
+/* ------------------------------- 预览 ------------------------------- */
+function handlerCodeSnippet(s) {
+  const lines = String(s || '').split(/\r?\n/);
+  let inBlock = false;
+  for (const raw of lines) {
+    const t = raw.trim();
+    if (!t) continue;
+    if (inBlock) {
+      if (t.includes('*/')) inBlock = false;
+      continue;
+    }
+    if (t.startsWith('/*')) {
+      if (!t.includes('*/')) inBlock = true;
+      continue;
+    }
+    if (t.startsWith('//')) continue;
+    if (t.startsWith('*')) continue;
+    return t.length > 80 ? t.slice(0, 77) + '…' : t;
+  }
+  return '';
+}
+function addPreviewLog(text) {
+  const box = $('#previewLog');
+  if (!box) return;
+  const line = document.createElement('div');
+  line.className = 'plog';
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  line.textContent = `[${hh}:${mm}:${ss}] ${text}`;
+  box.appendChild(line);
+  while (box.children.length > 8) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+function enterPreview() {
+  previewReturnPage = project.activePage;
+  document.body.classList.add('preview');
+  const box = $('#previewLog');
+  if (box) box.innerHTML = '';
+  addPreviewLog('预览模式：点击按钮查看跳转/逻辑；Esc 退出');
+  renderSelection();
+  setTimeout(fitIfNeeded, 0);
+}
+function exitPreview() {
+  document.body.classList.remove('preview');
+  const box = $('#previewLog');
+  if (box) box.innerHTML = '';
+  if (previewReturnPage >= 0 && previewReturnPage !== project.activePage) {
+    switchPage(previewReturnPage, true);
+  }
+  previewReturnPage = -1;
+  renderSelection();
+  setTimeout(fitIfNeeded, 0);
+}
+function previewClick(w) {
+  const btnText = String(w.text || w.id || '按钮');
+  const code = handlerCodeSnippet(w.handler);
+  let targetIndex = -1;
+  let targetName = '';
+  if (w.target) {
+    targetIndex = project.pages.findIndex(pg => pg.key === w.target);
+    if (targetIndex >= 0) targetName = project.pages[targetIndex].name;
+  }
+
+  if (targetIndex >= 0 && code) {
+    addPreviewLog(`按钮“${btnText}” → 跳转“${targetName}”；其他逻辑：${code}`);
+    switchPage(targetIndex, true);
+    toast(`跳转“${targetName}”，还会执行其他逻辑（见左下角）`, 2600);
+  } else if (targetIndex >= 0) {
+    addPreviewLog(`按钮“${btnText}” → 跳转“${targetName}”`);
+    switchPage(targetIndex, true);
+    toast(`跳转：${targetName}`, 1800);
+  } else if (code) {
+    addPreviewLog(`按钮“${btnText}” → 其他逻辑：${code}`);
+    toast('会执行其他逻辑（见左下角预览日志）', 2400);
+  } else {
+    addPreviewLog(`按钮“${btnText}” → 没有绑定页面跳转或其他逻辑`);
+    toast('这个按钮没有绑定页面跳转或其他逻辑', 2000);
+  }
+}
+
 /* ------------------------------- 渲染舞台 ------------------------------- */
 function gridCss(size) {
   return `linear-gradient(to right, rgba(255,255,255,.045) 1px, transparent 1px),` +
          `linear-gradient(to bottom, rgba(255,255,255,.045) 1px, transparent 1px)`;
 }
+function prependWidgetBg(el, w) {
+  if (!w.bgPreviewData) return;
+  const img = document.createElement('img');
+  img.className = 'widget-bg';
+  img.src = w.bgPreviewData;
+  img.alt = '';
+  el.insertBefore(img, el.firstChild);
+}
+
 function renderStage() {
   const stage = $('#stage');
   stage.style.width = project.designW + 'px';
@@ -742,6 +851,7 @@ function renderStage() {
       } else {
         el.textContent = w.text || '';
       }
+      prependWidgetBg(el, w);
       if (w.enabled !== false) {
         el.addEventListener('mouseenter', () => { el.style.background = w.hoverBg || w.normalBg; });
         el.addEventListener('mouseleave', () => { el.style.background = w.normalBg || '#222a3e'; });
@@ -754,6 +864,7 @@ function renderStage() {
       el.style.textAlign = w.align || 'center';
     } else if (w.type === 'panel') {
       el.style.background = w.fillColor || '#1a2030';
+      prependWidgetBg(el, w);
     } else if (w.type === 'image') {
       if (w.previewData) {
         const img = document.createElement('img');
@@ -773,6 +884,7 @@ function renderStage() {
       el.style.color = hasText ? (w.textColor || '#e8eefc') : (w.placeholderColor || '#7c8aa5');
       el.style.fontSize = (w.fontSize || 24) + 'px';
       el.style.padding = '0 12px';
+      prependWidgetBg(el, w);
       const ph = document.createElement('span');
       ph.className = hasText ? '' : 'ph';
       ph.textContent = hasText ? w.value : (w.placeholder || '');
@@ -856,6 +968,14 @@ function numberField(label, prop, value, min = '', max = '') {
     <input type="number" data-prop="${prop}" value="${escHtml(value)}" min="${min}" max="${max}" step="1">
   </div>`;
 }
+function bgImageFields(w) {
+  return inputField('背景图', 'bgImage', w.bgImage || '') +
+    `<div class="field"><label>背景预览</label>
+      <input type="file" accept="image/*" data-file="bgimg" style="flex:1;color:var(--muted)">
+    </div>
+    <div class="hint">背景图会拉伸铺满控件（按钮/面板/输入框）；预览只用于编辑器。</div>`;
+}
+
 function checkField(label, prop, checked) {
   return `<div class="field"><label>${label}</label>
     <div class="chk"><label><input type="checkbox" data-prop="${prop}" ${checked ? 'checked' : ''}> 是</label></div>
@@ -943,6 +1063,7 @@ function renderProps() {
     html += colorField('边框颜色', 'borderColor', w.borderColor);
     html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
     html += numberField('圆角', 'radius', w.radius, 0, 80);
+    html += bgImageFields(w);
 
     html += inputField('图标路径', 'iconPath', w.iconPath || '');
     html += `<div class="row2">
@@ -988,6 +1109,7 @@ function renderProps() {
     html += colorField('边框颜色', 'borderColor', w.borderColor);
     html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
     html += numberField('圆角', 'radius', w.radius, 0, 80);
+    html += bgImageFields(w);
   } else if (w.type === 'image') {
     html += inputField('图片路径', 'path', w.path);
     html += `<div class="field"><label>缩放</label>
@@ -1015,6 +1137,7 @@ function renderProps() {
     html += colorField('文字颜色', 'textColor', w.textColor);
     html += numberField('圆角', 'radius', w.radius, 0, 80);
     html += numberField('边框粗细', 'borderWidth', w.borderWidth, 0, 12);
+    html += bgImageFields(w);
   }
 
   html += `<div class="actions-row">
@@ -1255,8 +1378,12 @@ function generateCode(p) {
     pg.buttons = [];
     pg.inputs = [];
     pg.images = [];
+    let bgIndex = 0;
     const prefix = multi ? cppIdent(pg.id, 'PAGE') + '_' : '';
     pg.widgets.forEach((w, wi) => {
+      if (['button', 'panel', 'input'].includes(w.type) && String(w.bgImage || '').trim()) {
+        w._bgVar = 'g_p' + pg._index + '_bg_' + (++bgIndex);
+      }
       if (w.type === 'button') {
         const base = cppIdent(w.id, 'BTN_' + (wi + 1));
         let id = 'UI_' + prefix + base;
@@ -1349,9 +1476,10 @@ function generateCode(p) {
   i4('static int g_page = ' + firstPage + ';');
   if (bgImage) i4('static Image g_bg;');
   pages.forEach(pg => pg.images.forEach(w => i4('static Image ' + w._var + ';')));
+  pages.forEach(pg => pg.widgets.forEach(w => { if (w._bgVar) i4('static Image ' + w._bgVar + ';'); }));
   pages.forEach(pg => pg.buttons.forEach(w => { if (w._iconVar) i4('static Image ' + w._iconVar + ';'); }));
   pages.forEach(pg => pg.inputs.forEach(w => i4('static TextInput ' + w._var + ';')));
-  if (bgImage || pages.some(pg => pg.images.length || pg.buttons.some(w => w._iconVar) || pg.inputs.length)) a('');
+  if (bgImage || pages.some(pg => pg.images.length || pg.buttons.some(w => w._iconVar) || pg.inputs.length || pg.widgets.some(w => w._bgVar))) a('');
 
   if (percent) {
     i4('// 把“屏幕百分比”换算成当前 Viewport 的设计坐标');
@@ -1416,6 +1544,7 @@ function generateCode(p) {
   if (bgImage) i8('g_bg.load(assetPath(' + cppString(bgImage) + '));');
   pages.forEach(pg => {
     pg.images.forEach(w => i8(w._var + '.load(assetPath(' + cppString(w.path) + '));'));
+    pg.widgets.forEach(w => { if (w._bgVar) i8(w._bgVar + '.load(assetPath(' + cppString(w.bgImage) + '));'); });
     pg.buttons.forEach(w => { if (w._iconVar) i8(w._iconVar + '.load(assetPath(' + cppString(w.iconPath) + '));'); });
     pg.inputs.forEach(w => {
       i8(w._var + '.maxLen = ' + Math.max(0, Math.round(num(w.maxLen, 16))) + ';');
@@ -1537,6 +1666,7 @@ function generateCode(p) {
       if (w.type === 'panel') {
         i8('// 面板');
         i8('fillRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + rgbExpr(w.fillColor) + ');');
+        if (w._bgVar) i8('vp.image(' + w._bgVar + ', ' + R + ');');
         if (Number(w.borderWidth || 0) > 0)
           i8('frameRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + Math.round(num(w.borderWidth, 0)) + ', ' + rgbExpr(w.borderColor) + ');');
         a('');
@@ -1564,10 +1694,12 @@ function generateCode(p) {
         i12('const Rect r = ' + rectExpr(w) + ';');
         if (w.enabled === false) {
           i12('fillRound(r, ' + radius + ', ' + rgbExpr(w.disabledBg || '#262a33') + ');');
+          if (w._bgVar) i12('vp.image(' + w._bgVar + ', r);');
           if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
         } else {
           i12('const bool hover = r.contains(m);');
           i12('fillRound(r, ' + radius + ', hover ? ' + rgbExpr(w.hoverBg) + ' : ' + rgbExpr(w.normalBg) + ');');
+          if (w._bgVar) i12('vp.image(' + w._bgVar + ', r);');
           if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
         }
         const textColor = w.enabled === false ? (w.disabledText || '#777d8a') : (w.textColor || '#eef2ff');
@@ -1599,6 +1731,7 @@ function generateCode(p) {
         i8('{');
         i12('const Rect r = ' + rectExpr(w) + ';');
         i12('fillRound(r, ' + radius + ', ' + rgbExpr(w.inputBg) + ');');
+        if (w._bgVar) i12('vp.image(' + w._bgVar + ', r);');
         if (bw > 0) {
           i12('frameRound(r, ' + radius + ', ' + bw + ', ' + w._var + '.focused ? ' + rgbExpr(w.focusBorderColor) + ' : ' + rgbExpr(w.borderColor) + ');');
         }
@@ -1734,10 +1867,10 @@ function init() {
   $('#btnRedo').addEventListener('click', redo);
   $('#btnCode').addEventListener('click', openCode);
   $('#btnPreview').addEventListener('click', () => {
-    document.body.classList.toggle('preview');
-    setTimeout(fitIfNeeded, 0);
+    if (document.body.classList.contains('preview')) exitPreview();
+    else enterPreview();
   });
-  $('#previewExit').addEventListener('click', () => document.body.classList.remove('preview'));
+  $('#previewExit').addEventListener('click', exitPreview);
 
   // 添加
   $$('.pal-btn').forEach(b => b.addEventListener('click', () => addWidget(b.dataset.add)));
@@ -1773,7 +1906,17 @@ function init() {
 
   // 画布
   $('#stage').addEventListener('pointerdown', e => {
-    if (document.body.classList.contains('preview')) return;
+    if (document.body.classList.contains('preview')) {
+      const el = e.target.closest('.widget');
+      if (el) {
+        const w = project.widgets.find(x => x.uid === el.dataset.uid);
+        if (w && w.type === 'button' && w.visible !== false && w.enabled !== false) {
+          e.preventDefault();
+          previewClick(w);
+        }
+      }
+      return;
+    }
     const handle = e.target.closest('.handle');
     if (handle) {
       const w = selected();
@@ -1806,6 +1949,7 @@ function init() {
         if (!w) return;
         r.onload = () => {
           if (fileKind === 'icon') w.iconPreviewData = r.result;
+          else if (fileKind === 'bgimg') w.bgPreviewData = r.result;
           else w.previewData = r.result;
           renderStage();
         };
@@ -1853,7 +1997,7 @@ function init() {
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
     if (e.key === 'Escape') {
-      if (document.body.classList.contains('preview')) document.body.classList.remove('preview');
+      if (document.body.classList.contains('preview')) exitPreview();
       else if (!$('#codeModal').classList.contains('hidden')) closeCode();
       else select(null);
       return;
@@ -1889,6 +2033,11 @@ function init() {
   if (selParam) {
     const w = project.widgets.find(x => String(x.id || '') === selParam);
     if (w) select(w.uid);
+  }
+  if (params.has('preview')) enterPreview();
+  if (params.has('previewclick')) {
+    const b = project.widgets.find(w => w.type === 'button' && w.target);
+    if (b) previewClick(b);
   }
 
   // 测试用：?dumpjson=1 输出当前工程 JSON
@@ -1926,6 +2075,15 @@ function init() {
     applyCentering(testW);
     ok('自动居中', testW.x === Math.round((project.designW - testW.w) / 2) &&
       testW.y === Math.round((project.designH - testW.h) / 2));
+
+    const bgw = project.widgets.find(w => w.type === 'panel') || project.widgets.find(w => w.type === 'button');
+    if (bgw) {
+      bgw.bgPreviewData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+      renderStage();
+      ok('控件背景图渲染', !!document.querySelector('.widget-bg'));
+    } else {
+      ok('控件背景图渲染', false);
+    }
     select(testW.uid);
     const el = document.querySelector('.widget[data-uid="' + testW.uid + '"]');
     if (el) {
@@ -1957,6 +2115,23 @@ function init() {
     ok('新增页面', project.pages.length === beforePages + 1);
     switchPage(0);
     ok('切换页面', project.activePage === 0);
+
+    ok('按钮逻辑检测', handlerCodeSnippet('// TODO\nint a = 1;') === 'int a = 1;');
+    const targetBtn = project.widgets.find(w => w.type === 'button' && w.target);
+    const beforePage = project.activePage;
+    enterPreview();
+    previewClick(targetBtn);
+    ok('预览跳转生效', project.activePage !== beforePage);
+    ok('预览日志有提示', $('#previewLog').textContent.includes('跳转'));
+
+    switchPage(0, true);
+    const codeBtn = project.widgets.find(w => w.type === 'button' && !w.target);
+    codeBtn.handler = 'saveSettings();';
+    previewClick(codeBtn);
+    ok('预览其他逻辑提示', $('#previewLog').textContent.includes('其他逻辑'));
+
+    exitPreview();
+    ok('退出预览恢复页面', project.activePage === beforePage);
 
     const body = results.join('\n');
     document.body.innerHTML = '<pre id="selftest">' + escHtml(body) + '</pre>';

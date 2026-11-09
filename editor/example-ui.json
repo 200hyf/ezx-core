@@ -73,6 +73,7 @@
           "iconSize": 40,
           "iconGap": 10,
           "iconPos": "left",
+          "bgImage": "",
           "target": ""
         },
         {
@@ -102,6 +103,7 @@
           "iconSize": 40,
           "iconGap": 10,
           "iconPos": "left",
+          "bgImage": "",
           "handler": "// TODO: 在这里写点击逻辑"
         },
         {
@@ -130,6 +132,7 @@
           "iconSize": 40,
           "iconGap": 10,
           "iconPos": "left",
+          "bgImage": "",
           "target": "",
           "handler": "// TODO: 在这里写点击逻辑"
         },
@@ -157,7 +160,8 @@
           "textColor": "#e8eefc",
           "placeholderColor": "#7c8aa5",
           "radius": 8,
-          "borderWidth": 2
+          "borderWidth": 2,
+          "bgImage": ""
         }
       ]
     },
@@ -176,6 +180,7 @@
           "borderColor": "#3a4a6a",
           "borderWidth": 2,
           "radius": 12,
+          "bgImage": "res/bg.png",
           "uid": "w7",
           "id": "",
           "visible": true,
@@ -227,6 +232,7 @@
           "radius": 8,
           "disabledBg": "#262a33",
           "disabledText": "#777d8a",
+          "bgImage": "",
           "handler": "// TODO: 在这里写点击逻辑"
         }
       ]

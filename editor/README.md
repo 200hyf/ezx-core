@@ -73,6 +73,18 @@ static Rect pctRect(const Viewport& vp, float x, float y, float w, float h)
 > ```
 > 想保留 16:9 黑边就用默认的 `Contain`；两种模式下比例布局都会正确换算。
 
+## 预览
+
+点右上角 **「预览」**：
+
+- 隐藏编辑面板；
+- **点击按钮会真正触发页面跳转**（按按钮「跳转页面」配置）；
+- 左下角有**预览日志**：记录点击了哪个按钮、跳到哪个页面；
+- 如果按钮的「按钮逻辑」里写了非注释代码，日志会提示“其他逻辑：`saveSettings();`”，提醒你这里还会执行别的东西；
+- `Esc` 或右上角「退出预览」返回；返回后会回到进入预览前的编辑页面。
+
+![预览模式](editor_preview_mode.png)
+
 ## 页面（跳转）
 
 画布上方的标签就是页面：
@@ -140,6 +152,23 @@ vp.imageCover(g_bg, pctRect(vp, 0, 0, 1, 1));
 `init()` 里会自动 `g_bg.load(assetPath("res/bg.png"));`。
 
 > 编辑器里如果没选「背景预览」，画布只显示背景色；生成代码仍然会用路径加载真实图片。
+
+## 控件背景图（按钮 / 面板 / 文本输入）
+
+按钮、面板、文本输入的属性里都有 **「背景图」**：
+
+- 路径例如 `res/button_bg.png`；
+- 生成代码会**拉伸铺满控件**：
+
+```cpp
+vp.image(g_p0_bg_1, r);
+```
+
+- 「背景预览」只用于编辑器显示；
+- 和按钮的「图标」是两回事：
+  - 背景图：铺在按钮/面板/输入框底下；
+  - 图标：显示在按钮文字旁边/上方。
+- 注意：生成代码里背景图是矩形拉伸，不会按圆角裁切；需要圆角裁切要自己加裁剪。
 
 ## 控件与生成代码
 
@@ -361,7 +390,8 @@ editor/
 ├─ README.md             本文件
 ├─ example-ui.json       双页面示例工程（可在编辑器里打开）
 ├─ example-generated.cpp 示例工程生成的 C++ 代码（可直接编译）
-├─ editor_preview.png    界面截图
-├─ editor_selected.png   选中按钮时的属性面板截图
-└─ editor_page2.png      第二页（页面跳转）截图
+├─ editor_preview.png      界面截图
+├─ editor_selected.png     选中按钮时的属性面板截图
+├─ editor_page2.png        第二页（页面跳转）截图
+└─ editor_preview_mode.png 预览模式（按钮跳转 + 日志）截图
 ```
