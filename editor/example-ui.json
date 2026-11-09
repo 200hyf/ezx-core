@@ -6,6 +6,7 @@
   "bg": "#12141c",
   "bgImage": "res/bg.png",
   "bgFit": "cover",
+  "layout": "percent",
   "grid": 8,
   "pages": [
     {

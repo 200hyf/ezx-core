@@ -369,6 +369,12 @@ function cppIdent(s, fallback) {
   if (!x || !/^[A-Za-z_]/.test(x)) x = fallback;
   return x;
 }
+function buttonFuncName(w) {
+  const prefix = project && project.pages.length > 1
+    ? cppIdent(project.pages[project.activePage].id, 'PAGE') + '_'
+    : '';
+  return 'onButton_' + prefix + cppIdent(w.id, 'BTN_1');
+}
 function alignExpr(a) {
   return a === 'left' ? 'Align::Left' : a === 'right' ? 'Align::Right' : 'Align::Center';
 }
@@ -452,7 +458,7 @@ function normalizeProject(p) {
     version: 1, name: '未命名界面',
     designW: W_DEFAULT, designH: H_DEFAULT,
     bg: '#12141c', bgImage: '', bgFit: 'cover', bgPreviewData: '',
-    grid: 8, pages: null, activePage: 0,
+    layout: 'percent', grid: 8, pages: null, activePage: 0,
     widgets: []
   }, p || {});
   out.designW = clamp(num(out.designW, W_DEFAULT), 320, 3840);
@@ -480,6 +486,7 @@ function normalizeProject(p) {
   out.activePage = clamp(Math.round(num(out.activePage, 0)), 0, pages.length - 1);
   out.widgets = pages[out.activePage].widgets;
   out.bgFit = ['cover', 'fit', 'stretch'].includes(out.bgFit) ? out.bgFit : 'cover';
+  out.layout = out.layout === 'fixed' ? 'fixed' : 'percent';
   return out;
 }
 
@@ -868,6 +875,13 @@ function renderProps() {
         ${numberField('设计高', 'designH', project.designH, 240, 2160)}
       </div>
       ${colorField('背景色', 'bg', project.bg)}
+      <div class="field"><label>布局方式</label>
+        <select data-prop="layout">
+          <option value="percent" ${project.layout !== 'fixed' ? 'selected' : ''}>按屏幕比例（推荐）</option>
+          <option value="fixed" ${project.layout === 'fixed' ? 'selected' : ''}>固定设计坐标</option>
+        </select>
+      </div>
+      <div class="hint">${project.layout === 'fixed' ? '坐标是 1280×720 设计像素，窗口缩放时整体等比缩放。' : '坐标按屏幕百分比生成（pctRect），窗口缩放时按钮跟着屏幕比例走。'}</div>
       ${inputField('背景图', 'bgImage', project.bgImage)}
       <div class="field"><label>背景填充</label>
         <select data-prop="bgFit">
@@ -902,7 +916,7 @@ function renderProps() {
       const pagePrefix = project.pages.length > 1
         ? cppIdent(project.pages[project.activePage].id, 'PAGE') + '_'
         : '';
-      html += `<div class="hint">生成 <code>UI_${escHtml(pagePrefix + cppIdent(w.id, 'BTN_1'))}</code>；点击逻辑在 onClick 里。</div>`;
+      html += `<div class="hint">生成 <code>UI_${escHtml(pagePrefix + cppIdent(w.id, 'BTN_1'))}</code>；按钮逻辑在 <code>${escHtml(buttonFuncName(w))}()</code>。</div>`;
     } else {
       html += `<div class="hint">生成 <code>TextInput</code>，自动处理聚焦和光标。</div>`;
     }
@@ -913,6 +927,8 @@ function renderProps() {
       ${numberField('宽', 'w', w.w, 8)}
       ${numberField('高', 'h', w.h, 8)}
     </div>`;
+  const pct = (v, base) => (v / base * 100).toFixed(1);
+  html += `<div class="hint">占屏幕：X ${pct(w.x, project.designW)}% · Y ${pct(w.y, project.designH)}% · 宽 ${pct(w.w, project.designW)}% · 高 ${pct(w.h, project.designH)}%</div>`;
   html += `<div class="field"><label>状态</label><div class="chk">
       <label><input type="checkbox" data-prop="visible" ${w.visible !== false ? 'checked' : ''}> 可见</label>
       <label><input type="checkbox" data-prop="enabled" ${w.enabled !== false ? 'checked' : ''}> 可用</label>
@@ -952,10 +968,10 @@ function renderProps() {
         <option value="">不跳转</option>
         ${targetOpts}
       </select></div>
-      <div class="hint">设置后，点击按钮会先执行下面的逻辑，再自动 goPage 到目标页面。</div>`;
+      <div class="hint">设置后，生成的 onButton_xxx() 回调里会明确写 goPage(...)，其他逻辑继续写在同一个函数里。</div>`;
 
-    html += `<div class="field"><label>点击逻辑</label></div>
-      <div class="hint">会原样放进 <code>onClick</code> 的 case 里；可以调用你自己的函数。</div>
+    html += `<div class="field"><label>按钮逻辑</label></div>
+      <div class="hint">会原样放进 <code>${escHtml(buttonFuncName(w))}()</code> 回调；页面跳转和业务逻辑都在这个函数里。</div>
       <textarea data-prop="handler" spellcheck="false">${escHtml(w.handler || '')}</textarea>`;
   } else if (w.type === 'label') {
     html += inputField('文字', 'text', w.text);
@@ -1139,7 +1155,7 @@ function onPropInput(e) {
   const w = selected();
   historyPush();
   if (!w) {
-    if (['name','designW','designH','bg','bgImage','bgFit','grid','pageName','pageId'].includes(prop)) {
+    if (['name','designW','designH','bg','bgImage','bgFit','grid','layout','pageName','pageId'].includes(prop)) {
       if (['designW','designH','grid'].includes(prop)) value = Math.round(num(value));
       if (prop === 'pageName') {
         project.pages[project.activePage].name = String(value).trim() || project.pages[project.activePage].name;
@@ -1150,6 +1166,12 @@ function onPropInput(e) {
       if (prop === 'pageId') {
         project.pages[project.activePage].id = String(value).trim() || project.pages[project.activePage].id;
         renderPageTabs();
+        saveLocal();
+        return;
+      }
+      if (prop === 'layout') {
+        project.layout = value === 'fixed' ? 'fixed' : 'percent';
+        renderProps();
         saveLocal();
         return;
       }
@@ -1212,6 +1234,11 @@ function generateCode(p) {
       _index: pi
     }));
   const multi = pages.length > 1;
+  const percent = p.layout !== 'fixed';
+  const fnum = n => String(Math.round(n * 10000) / 10000);
+  const rectExpr = w => percent
+    ? `pctRect(vp, ${fnum(w.x / W)}, ${fnum(w.y / H)}, ${fnum(w.w / W)}, ${fnum(w.h / H)})`
+    : `Rect{ ${w.x}, ${w.y}, ${w.w}, ${w.h} }`;
 
   const usedPageIds = new Set();
   pages.forEach((pg, pi) => {
@@ -1237,6 +1264,7 @@ function generateCode(p) {
         while (usedButtonIds.has(id)) id = 'UI_' + prefix + base + '_' + (n++);
         usedButtonIds.add(id);
         w._id = id;
+        w._func = 'onButton_' + id.replace(/^UI_/, '');
         pg.buttons.push(w);
         if (String(w.iconPath || '').trim()) {
           w._iconVar = 'g_p' + pg._index + '_icon_' + pg.buttons.length;
@@ -1244,6 +1272,7 @@ function generateCode(p) {
         if (w.target) {
           const t = pages.find(x => x.key === w.target);
           w._targetId = t ? t._cppId : '';
+          w._targetName = t ? t.name : '';
         }
       } else if (w.type === 'input') {
         pg.inputs.push(w);
@@ -1276,6 +1305,7 @@ function generateCode(p) {
   a('//  由 ezx-core UI 编辑器生成');
   a('//  设计分辨率: ' + W + ' x ' + H);
   a('//  页面: ' + pages.map(pg => pg.name + ' (' + pg._cppId + ')').join(' / '));
+  a('//  布局: ' + (percent ? '按屏幕比例（pctRect，随窗口缩放）' : '固定设计坐标'));
   a('//');
   a('//  用法（在 main 里）：');
   a('//      ui::init();                 // 建窗后调用一次');
@@ -1283,8 +1313,12 @@ function generateCode(p) {
   a('//      ui::update(in, vp);         // 每帧');
   a('//      ui::draw(vp, in);           // 每帧，beginFrame 之后');
   a('//');
+  a('//  按钮逻辑：');
+  a('//      每个按钮都有一个独立的 onButton_xxx() 函数，');
+  a('//      页面跳转、保存数据、开始游戏等逻辑都写在那里，一眼能看懂。');
+  a('//');
   a('//  页面切换：');
-  a('//      ui::goPage(UI_PAGE_SETTINGS);   // 或在按钮的「跳转页面」里设置');
+  a('//      ui::goPage(UI_PAGE_SETTINGS);');
   a('// ============================================================');
   a('#include "easyx_core.h"');
   if (hasInput) a('#include <chrono>');
@@ -1318,6 +1352,18 @@ function generateCode(p) {
   pages.forEach(pg => pg.buttons.forEach(w => { if (w._iconVar) i4('static Image ' + w._iconVar + ';'); }));
   pages.forEach(pg => pg.inputs.forEach(w => i4('static TextInput ' + w._var + ';')));
   if (bgImage || pages.some(pg => pg.images.length || pg.buttons.some(w => w._iconVar) || pg.inputs.length)) a('');
+
+  if (percent) {
+    i4('// 把“屏幕百分比”换算成当前 Viewport 的设计坐标');
+    i4('static Rect pctRect(const Viewport& vp, float x, float y, float w, float h)');
+    i4('{');
+    i8('const Rect a = vp.area();');
+    i8('const Point p0 = vp.toDesign(a.x + (int)(a.w * x), a.y + (int)(a.h * y));');
+    i8('const Point p1 = vp.toDesign(a.x + (int)(a.w * (x + w)), a.y + (int)(a.h * (y + h)));');
+    i8('return Rect{ p0.x, p0.y, p1.x - p0.x, p1.y - p0.y };');
+    i4('}');
+    a('');
+  }
 
   if (hasBox) {
     i4('static void fillRound(const Rect& r, int radius, COLORREF color)');
@@ -1382,30 +1428,45 @@ function generateCode(p) {
   i4('}');
   a('');
 
-  i4('void onClick(int id)');
-  i4('{');
   if (allButtons.length) {
-    i8('switch (id)');
-    i8('{');
+    a('// ============================================================');
+    a('//  按钮回调：每个按钮一个函数，逻辑写在这里');
+    a('// ============================================================');
     allButtons.forEach(w => {
-      i8('case ' + w._id + ':');
-      L.push('            // 点击“' + String(w.text || w.id || '按钮').replace(/\r?\n/g, ' ') + '”');
+      const btnText = String(w.text || w.id || '按钮').replace(/\r?\n/g, ' ');
+      i4('// 按钮：' + btnText + (w._targetId ? '（跳转到“' + w._targetName + '”）' : ''));
+      i4('static void ' + w._func + '()');
+      i4('{');
+      if (w._targetId) {
+        i8('// 页面跳转（编辑器里配置的）');
+        i8('goPage(' + w._targetId + ');');
+        i8('');
+        i8('// 其他逻辑写在这里：');
+      } else {
+        i8('// 这个按钮没有配置页面跳转，逻辑写在这里：');
+      }
       const body = String(w.handler || '').replace(/\r/g, '').split('\n');
       let wrote = false;
       body.forEach(line => {
-        if (line.trim() !== '') { L.push('                ' + line); wrote = true; }
+        if (line.trim() !== '') { L.push('        ' + line); wrote = true; }
       });
-      if (!wrote) L.push('                // TODO: 在这里写点击逻辑');
-      L.push('                break;');
+      if (!wrote) i8('// TODO: 在这里写点击逻辑');
+      i4('}');
+      a('');
     });
-    i8('default:');
-    i8('    break;');
+    a('// 按钮分发：一般不用改这里');
+    i4('static void onButtonClick(UiId id)');
+    i4('{');
+    i8('switch (id)');
+    i8('{');
+    allButtons.forEach(w => {
+      i8('case ' + w._id + ': ' + w._func + '(); break;');
+    });
+    i8('default: break;');
     i8('}');
-  } else {
-    i8('(void)id;');
+    i4('}');
+    a('');
   }
-  i4('}');
-  a('');
 
   pages.forEach(pg => {
     const visibleInputs = pg.inputs.filter(w => w.visible !== false && w.enabled !== false);
@@ -1426,9 +1487,9 @@ function generateCode(p) {
       i8('if (in.clicked())');
       i8('{');
       visibleInputs.forEach(w => {
-        i12(w._var + '.focused = inArea && Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }.contains(m);');
+        i12(w._var + '.focused = inArea && ' + rectExpr(w) + '.contains(m);');
         i12('if (' + w._var + '.focused)');
-        i12('    ' + w._var + '.placeCursor(vp, Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }, ' + Math.round(num(w.fontSize, 24)) + ', in.pos().x);');
+        i12('    ' + w._var + '.placeCursor(vp, ' + rectExpr(w) + ', ' + Math.round(num(w.fontSize, 24)) + ', in.pos().x);');
       });
       i8('}');
       visibleInputs.forEach(w => i8(w._var + '.update(in);'));
@@ -1439,8 +1500,7 @@ function generateCode(p) {
       i8('if (in.clicked() && inArea)');
       i8('{');
       clickButtons.slice().reverse().forEach(w => {
-        i12('if (Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }.contains(m)) { onClick(' + w._id + ');'
-          + (w._targetId ? ' goPage(' + w._targetId + ');' : '') + ' return; }');
+        i12('if (' + rectExpr(w) + '.contains(m)) { onButtonClick(' + w._id + '); return; }');
       });
       i8('}');
     }
@@ -1473,7 +1533,7 @@ function generateCode(p) {
     pg.widgets.forEach(w => {
       if (w.visible === false) return;
       wrote = true;
-      const R = 'Rect{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' }';
+      const R = rectExpr(w);
       if (w.type === 'panel') {
         i8('// 面板');
         i8('fillRound(' + R + ', ' + Math.round(num(w.radius, 0)) + ', ' + rgbExpr(w.fillColor) + ');');
@@ -1501,7 +1561,7 @@ function generateCode(p) {
         const bw = Math.round(num(w.borderWidth, 0));
         i8('// 按钮：' + String(w.text || w.id || ''));
         i8('{');
-        i12('const Rect r{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' };');
+        i12('const Rect r = ' + rectExpr(w) + ';');
         if (w.enabled === false) {
           i12('fillRound(r, ' + radius + ', ' + rgbExpr(w.disabledBg || '#262a33') + ');');
           if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
@@ -1537,7 +1597,7 @@ function generateCode(p) {
         const bw = Math.round(num(w.borderWidth, 0));
         i8('// 输入框：' + String(w.id || ''));
         i8('{');
-        i12('const Rect r{ ' + [w.x, w.y, w.w, w.h].join(', ') + ' };');
+        i12('const Rect r = ' + rectExpr(w) + ';');
         i12('fillRound(r, ' + radius + ', ' + rgbExpr(w.inputBg) + ');');
         if (bw > 0) {
           i12('frameRound(r, ' + radius + ', ' + bw + ', ' + w._var + '.focused ? ' + rgbExpr(w.focusBorderColor) + ' : ' + rgbExpr(w.borderColor) + ');');
@@ -1557,13 +1617,14 @@ function generateCode(p) {
     a('');
   });
 
+  const fullRect = percent ? 'pctRect(vp, 0, 0, 1, 1)' : ('Rect{ 0, 0, ' + W + ', ' + H + ' }');
   i4('void draw(const Viewport& vp, const Input& in)');
   i4('{');
-  i8('vp.fill(Rect{ 0, 0, ' + W + ', ' + H + ' }, ' + rgbExpr(p.bg || '#12141c') + ');');
+  i8('vp.fill(' + fullRect + ', ' + rgbExpr(p.bg || '#12141c') + ');');
   if (bgImage) {
-    if (p.bgFit === 'cover') i8('vp.imageCover(g_bg, Rect{ 0, 0, ' + W + ', ' + H + ' });');
-    else if (p.bgFit === 'stretch') i8('vp.image(g_bg, Rect{ 0, 0, ' + W + ', ' + H + ' });');
-    else i8('vp.imageFit(g_bg, Rect{ 0, 0, ' + W + ', ' + H + ' });');
+    if (p.bgFit === 'cover') i8('vp.imageCover(g_bg, ' + fullRect + ');');
+    else if (p.bgFit === 'stretch') i8('vp.image(g_bg, ' + fullRect + ');');
+    else i8('vp.imageFit(g_bg, ' + fullRect + ');');
   }
   i8('switch (g_page)');
   i8('{');
@@ -1636,6 +1697,8 @@ function init() {
   try { saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { saved = null; }
   project = saved ? normalizeProject(saved) : sampleProject();
   if (params.has('empty')) project = blankProject();
+  if (params.get('layout') === 'fixed') project.layout = 'fixed';
+  if (params.get('layout') === 'percent') project.layout = 'percent';
 
   // 项目名
   $('#projectName').addEventListener('input', e => {
@@ -1848,6 +1911,10 @@ function init() {
     ok('每个按钮独立 hover 作用域', (code.match(/const bool hover/g) || []).length >= 3);
     ok('生成页面枚举', code.includes('UI_PAGE_SETTINGS'));
     ok('生成页面跳转', code.includes('goPage(UI_PAGE_SETTINGS)'));
+    ok('比例布局 pctRect', code.includes('pctRect(vp'));
+    ok('每个按钮独立回调', code.includes('onButton_MAIN_BTN_START()') && code.includes('onButtonClick'));
+    const fixedCode = generateCode(Object.assign({}, sampleProject(), { layout: 'fixed' }));
+    ok('固定布局不使用 pctRect', !fixedCode.includes('pctRect'));
 
     const beforeCount = project.widgets.length;
     addWidget('label');

@@ -19,7 +19,7 @@
 │ 添加控件  │ 页面标签：主页面 / 设置页 / +页面 │ 属性面板       │
 │ 按钮      │                                  │ 位置/大小      │
 │ 文字      │        1280 × 720 画布            │ 颜色/字号      │
-│ 面板      │        （可缩放、网格吸附）        │ 点击逻辑       │
+│ 面板      │        （可缩放、网格吸附）        │ 按钮逻辑       │
 │ 图片      │                                  │ 跳转页面       │
 │ 文本输入  │                                  │ 图标/居中      │
 ├──────────┴──────────────────────────────────┴───────────────┤
@@ -44,7 +44,34 @@
 | 打开工程 | 「打开」选择之前保存的 `.json` |
 | 预览 | 「预览」隐藏编辑面板，只看界面；`Esc` 退出 |
 
-画布默认 **1280×720**，代码里的坐标就是画布坐标。底部可以切换 50%/75%/100%/125% 或「适应」。
+画布默认 **1280×720**。底部可以切换 50%/75%/100%/125% 或「适应」。
+
+## 布局方式：按屏幕比例（默认）
+
+不选中控件时，右侧「项目」里可以选择：
+
+- **按屏幕比例（推荐）**：生成 `pctRect(vp, x%, y%, w%, h%)`，按钮位置/大小跟着窗口比例走；
+- **固定设计坐标**：生成 `Rect{ x, y, w, h }`，按 1280×720 设计像素固定。
+
+比例布局生成的代码大致是：
+
+```cpp
+static Rect pctRect(const Viewport& vp, float x, float y, float w, float h)
+{
+    const Rect a = vp.area();
+    const Point p0 = vp.toDesign(a.x + (int)(a.w * x), a.y + (int)(a.h * y));
+    const Point p1 = vp.toDesign(a.x + (int)(a.w * (x + w)), a.y + (int)(a.h * (y + h)));
+    return Rect{ p0.x, p0.y, p1.x - p0.x, p1.y - p0.y };
+}
+```
+
+这样按钮在 50% 位置，窗口放大/缩小后仍保持在可见区域的 50%。
+
+> 想要**铺满窗口**（而不是留黑边），在 `main` 里加：
+> ```cpp
+> vp.setScaleMode(ScaleMode::Cover);
+> ```
+> 想保留 16:9 黑边就用默认的 `Contain`；两种模式下比例布局都会正确换算。
 
 ## 页面（跳转）
 
@@ -57,12 +84,21 @@
 
 每个页面有自己的控件、图层和按钮。按钮属性里有 **「跳转页面」**：
 
-- 选一个目标页面，点击按钮时会先执行「点击逻辑」，然后自动 `goPage(...)`；
-- 也可以在点击逻辑里手写：
+- 选一个目标页面后，生成的回调里会**明确写一行** `goPage(...)`，不是藏在引擎里的“魔法”；
+- 跳转和别的逻辑都在同一个函数里，顺序看得见：
 
 ```cpp
-ui::goPage(UI_PAGE_SETTINGS);
+static void onButton_MAIN_BTN_SETTINGS()
+{
+    // 页面跳转（编辑器里配置的）
+    goPage(UI_PAGE_SETTINGS);
+
+    // 其他逻辑写在这里：
+    // saveSettings();   // 跳转前后都可以加
+}
 ```
+
+- 也可以手写 `ui::goPage(UI_PAGE_SETTINGS);`。
 
 生成代码会包含：
 
@@ -92,8 +128,13 @@ int currentPage();
 生成代码会在 `draw()` 最前面先填背景色，再画背景图：
 
 ```cpp
-vp.fill(Rect{ 0, 0, 1280, 720 }, RGB(18, 20, 28));
-vp.imageCover(g_bg, Rect{ 0, 0, 1280, 720 });
+// 比例布局（默认）
+vp.fill(pctRect(vp, 0, 0, 1, 1), RGB(18, 20, 28));
+vp.imageCover(g_bg, pctRect(vp, 0, 0, 1, 1));
+
+// 固定设计坐标
+// vp.fill(Rect{ 0, 0, 1280, 720 }, RGB(18, 20, 28));
+// vp.imageCover(g_bg, Rect{ 0, 0, 1280, 720 });
 ```
 
 `init()` 里会自动 `g_bg.load(assetPath("res/bg.png"));`。
@@ -105,17 +146,31 @@ vp.imageCover(g_bg, Rect{ 0, 0, 1280, 720 });
 ### 按钮
 
 - `C++ ID`：例如 `BTN_START`。单页面生成 `UI_BTN_START`；多页面生成 `UI_MAIN_BTN_START`（页面 ID 做前缀，避免重名）。
-- 「点击逻辑」里写 C++ 代码，会原样放进 `onClick` 的 `case`：
+- **每个按钮生成一个独立函数**，函数名就是 `onButton_<按钮ID>`，所有逻辑都写在这里：
 
 ```cpp
-case UI_MAIN_BTN_START:
-    // 点击“开始游戏”
+static void onButton_MAIN_BTN_START()
+{
+    // 这个按钮没有配置页面跳转，逻辑写在这里：
     // TODO: 开始游戏
     // startGame();
-    break;
+}
 ```
 
-- 「跳转页面」：选中目标页面后，点击会自动切页。
+设置「跳转页面」后，同一函数里会多一行明确的 `goPage(...)`：
+
+```cpp
+static void onButton_MAIN_BTN_SETTINGS()
+{
+    // 页面跳转（编辑器里配置的）
+    goPage(UI_PAGE_SETTINGS);
+
+    // 其他逻辑写在这里：
+    // saveSettings();
+}
+```
+
+- 「按钮逻辑」里写 C++ 代码，会原样放进这个回调；页面跳转也在这里，不需要在别处找。
 - **按钮图标**：
   - 「图标路径」：例如 `res/start.png`；
   - 「图标大小」「图标间距」「图标位置（左/右/上）」；
@@ -173,9 +228,12 @@ namespace ui {
     void init();
     void update(const ezx::Input& in, const ezx::Viewport& vp);
     void draw(const ezx::Viewport& vp, const ezx::Input& in);
-    void onClick(int id);
     void goPage(int page);
     int  currentPage();
+
+    // 每个按钮一个回调（函数名随按钮 ID 变化）
+    // static void onButton_MAIN_BTN_START();
+    // static void onButton_MAIN_BTN_SETTINGS();
 }
 ```
 
@@ -205,6 +263,7 @@ int main()
     Input in;
 
     vp.setDesign(1280, 720);                 // 和编辑器里的设计分辨率一致
+    vp.setScaleMode(ScaleMode::Cover);       // 比例布局铺满窗口；想留黑边用 Contain
     win.onResize([&](int w, int h) { vp.fit(w, h); });
     if (!win.open(1024, 640)) return 1;
 
@@ -229,27 +288,49 @@ int main()
 
 > `ui::init()` 必须在窗口创建之后调用；图片用 `assetPath("res/...")` 加载，所以 `res` 要跟 exe 放一起。
 
-### 点击逻辑写在哪
+### 按钮逻辑写在哪
 
-生成代码里有 `onClick`：
+**每个按钮一个函数**，函数名就是按钮 ID：
 
 ```cpp
-void onClick(int id)
+// 按钮：开始游戏
+static void onButton_MAIN_BTN_START()
+{
+    // 这个按钮没有配置页面跳转，逻辑写在这里：
+    // TODO: 开始游戏
+    // startGame();
+}
+
+// 按钮：设置（跳转到“设置页”）
+static void onButton_MAIN_BTN_SETTINGS()
+{
+    // 页面跳转（编辑器里配置的）
+    goPage(UI_PAGE_SETTINGS);
+
+    // 其他逻辑写在这里：
+    // saveSettings();
+}
+```
+
+分发函数是生成的，一般不用改：
+
+```cpp
+static void onButtonClick(UiId id)
 {
     switch (id)
     {
-    case UI_MAIN_BTN_START:
-        // 这里写你的逻辑
-        // startGame();
-        break;
-    case UI_MAIN_BTN_SETTINGS:
-        // 不写也行，按钮的「跳转页面」会自动切到设置页
-        break;
-    default:
-        break;
+    case UI_MAIN_BTN_START:    onButton_MAIN_BTN_START(); break;
+    case UI_MAIN_BTN_SETTINGS: onButton_MAIN_BTN_SETTINGS(); break;
+    default: break;
     }
 }
 ```
+
+这样一眼能看出：
+
+- 哪个按钮对应哪个函数；
+- 页面跳转发生在哪一行；
+- 跳转之外的其他逻辑写在哪。
 
 页面切换也可以手写：
 
@@ -265,7 +346,7 @@ ui::goPage(UI_PAGE_SETTINGS);
 
 ## 限制（当前版本）
 
-- 生成的是**静态坐标布局**，不是运行时布局引擎；窗口缩放由 `Viewport` 统一缩放。
+- 生成的是**设计时算好的坐标**（比例或固定），不是运行时 flex 布局；比例布局依赖 `Viewport::area()` 换算。
 - 文字是单行；没有换行排版、滚动列表、动画时间轴。
 - 按钮图标是图片 + 文字，不支持九宫格/圆角裁切。
 - 输入框只支持单击聚焦、键盘输入；没有选中文本、右键菜单。

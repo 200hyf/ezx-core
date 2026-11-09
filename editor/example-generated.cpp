@@ -3,6 +3,7 @@
 //  由 ezx-core UI 编辑器生成
 //  设计分辨率: 1280 x 720
 //  页面: 主页面 (UI_PAGE_MAIN) / 设置页 (UI_PAGE_SETTINGS)
+//  布局: 按屏幕比例（pctRect，随窗口缩放）
 //
 //  用法（在 main 里）：
 //      ui::init();                 // 建窗后调用一次
@@ -10,8 +11,12 @@
 //      ui::update(in, vp);         // 每帧
 //      ui::draw(vp, in);           // 每帧，beginFrame 之后
 //
+//  按钮逻辑：
+//      每个按钮都有一个独立的 onButton_xxx() 函数，
+//      页面跳转、保存数据、开始游戏等逻辑都写在那里，一眼能看懂。
+//
 //  页面切换：
-//      ui::goPage(UI_PAGE_SETTINGS);   // 或在按钮的「跳转页面」里设置
+//      ui::goPage(UI_PAGE_SETTINGS);
 // ============================================================
 #include "easyx_core.h"
 #include <chrono>
@@ -39,6 +44,15 @@ namespace ui {
     static Image g_p0_img_1;
     static Image g_p1_icon_1;
     static TextInput g_p0_input_1;
+
+    // 把“屏幕百分比”换算成当前 Viewport 的设计坐标
+    static Rect pctRect(const Viewport& vp, float x, float y, float w, float h)
+    {
+        const Rect a = vp.area();
+        const Point p0 = vp.toDesign(a.x + (int)(a.w * x), a.y + (int)(a.h * y));
+        const Point p1 = vp.toDesign(a.x + (int)(a.w * (x + w)), a.y + (int)(a.h * (y + h)));
+        return Rect{ p0.x, p0.y, p1.x - p0.x, p1.y - p0.y };
+    }
 
     static void fillRound(const Rect& r, int radius, COLORREF color)
     {
@@ -89,29 +103,54 @@ namespace ui {
         g_page = UI_PAGE_MAIN;
     }
 
-    void onClick(int id)
+// ============================================================
+//  按钮回调：每个按钮一个函数，逻辑写在这里
+// ============================================================
+    // 按钮：开始游戏
+    static void onButton_MAIN_BTN_START()
+    {
+        // 这个按钮没有配置页面跳转，逻辑写在这里：
+        // TODO: 开始游戏
+        // startGame();
+    }
+
+    // 按钮：设置（跳转到“设置页”）
+    static void onButton_MAIN_BTN_SETTINGS()
+    {
+        // 页面跳转（编辑器里配置的）
+        goPage(UI_PAGE_SETTINGS);
+        
+        // 其他逻辑写在这里：
+        // TODO: 在这里写点击逻辑
+    }
+
+    // 按钮：退出
+    static void onButton_MAIN_BTN_QUIT()
+    {
+        // 这个按钮没有配置页面跳转，逻辑写在这里：
+        // TODO: 在这里写点击逻辑
+    }
+
+    // 按钮：返回（跳转到“主页面”）
+    static void onButton_SETTINGS_BTN_BACK()
+    {
+        // 页面跳转（编辑器里配置的）
+        goPage(UI_PAGE_MAIN);
+        
+        // 其他逻辑写在这里：
+        // TODO: 在这里写点击逻辑
+    }
+
+// 按钮分发：一般不用改这里
+    static void onButtonClick(UiId id)
     {
         switch (id)
         {
-        case UI_MAIN_BTN_START:
-            // 点击“开始游戏”
-                // TODO: 开始游戏
-                // startGame();
-                break;
-        case UI_MAIN_BTN_SETTINGS:
-            // 点击“设置”
-                // TODO: 在这里写点击逻辑
-                break;
-        case UI_MAIN_BTN_QUIT:
-            // 点击“退出”
-                // TODO: 在这里写点击逻辑
-                break;
-        case UI_SETTINGS_BTN_BACK:
-            // 点击“返回”
-                // TODO: 在这里写点击逻辑
-                break;
-        default:
-            break;
+        case UI_MAIN_BTN_START: onButton_MAIN_BTN_START(); break;
+        case UI_MAIN_BTN_SETTINGS: onButton_MAIN_BTN_SETTINGS(); break;
+        case UI_MAIN_BTN_QUIT: onButton_MAIN_BTN_QUIT(); break;
+        case UI_SETTINGS_BTN_BACK: onButton_SETTINGS_BTN_BACK(); break;
+        default: break;
         }
     }
 
@@ -123,18 +162,18 @@ namespace ui {
         // 输入框焦点
         if (in.clicked())
         {
-            g_p0_input_1.focused = inArea && Rect{ 480, 560, 320, 60 }.contains(m);
+            g_p0_input_1.focused = inArea && pctRect(vp, 0.375, 0.7778, 0.25, 0.0833).contains(m);
             if (g_p0_input_1.focused)
-                g_p0_input_1.placeCursor(vp, Rect{ 480, 560, 320, 60 }, 24, in.pos().x);
+                g_p0_input_1.placeCursor(vp, pctRect(vp, 0.375, 0.7778, 0.25, 0.0833), 24, in.pos().x);
         }
         g_p0_input_1.update(in);
 
         // 按钮点击（后画的优先）
         if (in.clicked() && inArea)
         {
-            if (Rect{ 480, 464, 320, 60 }.contains(m)) { onClick(UI_MAIN_BTN_QUIT); return; }
-            if (Rect{ 480, 392, 320, 60 }.contains(m)) { onClick(UI_MAIN_BTN_SETTINGS); goPage(UI_PAGE_SETTINGS); return; }
-            if (Rect{ 480, 320, 320, 60 }.contains(m)) { onClick(UI_MAIN_BTN_START); return; }
+            if (pctRect(vp, 0.375, 0.6444, 0.25, 0.0833).contains(m)) { onButtonClick(UI_MAIN_BTN_QUIT); return; }
+            if (pctRect(vp, 0.375, 0.5444, 0.25, 0.0833).contains(m)) { onButtonClick(UI_MAIN_BTN_SETTINGS); return; }
+            if (pctRect(vp, 0.375, 0.4444, 0.25, 0.0833).contains(m)) { onButtonClick(UI_MAIN_BTN_START); return; }
         }
     }
 
@@ -146,7 +185,7 @@ namespace ui {
         // 按钮点击（后画的优先）
         if (in.clicked() && inArea)
         {
-            if (Rect{ 480, 500, 320, 60 }.contains(m)) { onClick(UI_SETTINGS_BTN_BACK); goPage(UI_PAGE_MAIN); return; }
+            if (pctRect(vp, 0.375, 0.6944, 0.25, 0.0833).contains(m)) { onButtonClick(UI_SETTINGS_BTN_BACK); return; }
         }
     }
 
@@ -170,14 +209,14 @@ namespace ui {
         const bool inArea = vp.inside(in.pos().x, in.pos().y);
         const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };
         // 图片
-        vp.imageFit(g_p0_img_1, Rect{ 565, 55, 150, 150 });
+        vp.imageFit(g_p0_img_1, pctRect(vp, 0.4414, 0.0764, 0.1172, 0.2083));
 
         // 文字
-        vp.textIn(Rect{ 0, 220, 1280, 70 }, "我的游戏", 52, RGB(242, 246, 255), Align::Center);
+        vp.textIn(pctRect(vp, 0, 0.3056, 1, 0.0972), "我的游戏", 52, RGB(242, 246, 255), Align::Center);
 
         // 按钮：开始游戏
         {
-            const Rect r{ 480, 320, 320, 60 };
+            const Rect r = pctRect(vp, 0.375, 0.4444, 0.25, 0.0833);
             const bool hover = r.contains(m);
             fillRound(r, 8, hover ? RGB(62, 86, 132) : RGB(34, 42, 62));
             frameRound(r, 8, 2, RGB(92, 124, 196));
@@ -186,7 +225,7 @@ namespace ui {
 
         // 按钮：设置
         {
-            const Rect r{ 480, 392, 320, 60 };
+            const Rect r = pctRect(vp, 0.375, 0.5444, 0.25, 0.0833);
             const bool hover = r.contains(m);
             fillRound(r, 8, hover ? RGB(62, 86, 132) : RGB(34, 42, 62));
             frameRound(r, 8, 2, RGB(92, 124, 196));
@@ -195,7 +234,7 @@ namespace ui {
 
         // 按钮：退出
         {
-            const Rect r{ 480, 464, 320, 60 };
+            const Rect r = pctRect(vp, 0.375, 0.6444, 0.25, 0.0833);
             const bool hover = r.contains(m);
             fillRound(r, 8, hover ? RGB(62, 86, 132) : RGB(34, 42, 62));
             frameRound(r, 8, 2, RGB(92, 124, 196));
@@ -204,7 +243,7 @@ namespace ui {
 
         // 输入框：INPUT_NAME
         {
-            const Rect r{ 480, 560, 320, 60 };
+            const Rect r = pctRect(vp, 0.375, 0.7778, 0.25, 0.0833);
             fillRound(r, 8, RGB(24, 30, 44));
             frameRound(r, 8, 2, g_p0_input_1.focused ? RGB(110, 170, 255) : RGB(74, 90, 122));
             if (g_p0_input_1.text.empty())
@@ -219,15 +258,15 @@ namespace ui {
         const bool inArea = vp.inside(in.pos().x, in.pos().y);
         const Point m = inArea ? vp.toDesign(in.pos()) : Point{ -1, -1 };
         // 面板
-        fillRound(Rect{ 390, 100, 500, 520 }, 12, RGB(26, 32, 48));
-        frameRound(Rect{ 390, 100, 500, 520 }, 12, 2, RGB(58, 74, 106));
+        fillRound(pctRect(vp, 0.3047, 0.1389, 0.3906, 0.7222), 12, RGB(26, 32, 48));
+        frameRound(pctRect(vp, 0.3047, 0.1389, 0.3906, 0.7222), 12, 2, RGB(58, 74, 106));
 
         // 文字
-        vp.textIn(Rect{ 390, 140, 500, 70 }, "设置", 44, RGB(242, 246, 255), Align::Center);
+        vp.textIn(pctRect(vp, 0.3047, 0.1944, 0.3906, 0.0972), "设置", 44, RGB(242, 246, 255), Align::Center);
 
         // 按钮：返回
         {
-            const Rect r{ 480, 500, 320, 60 };
+            const Rect r = pctRect(vp, 0.375, 0.6944, 0.25, 0.0833);
             const bool hover = r.contains(m);
             fillRound(r, 8, hover ? RGB(62, 86, 132) : RGB(34, 42, 62));
             frameRound(r, 8, 2, RGB(92, 124, 196));
@@ -240,8 +279,8 @@ namespace ui {
 
     void draw(const Viewport& vp, const Input& in)
     {
-        vp.fill(Rect{ 0, 0, 1280, 720 }, RGB(18, 20, 28));
-        vp.imageCover(g_bg, Rect{ 0, 0, 1280, 720 });
+        vp.fill(pctRect(vp, 0, 0, 1, 1), RGB(18, 20, 28));
+        vp.imageCover(g_bg, pctRect(vp, 0, 0, 1, 1));
         switch (g_page)
         {
         case UI_PAGE_MAIN:
