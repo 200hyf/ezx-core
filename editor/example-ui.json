@@ -180,6 +180,7 @@
           "x": 60,
           "y": 60,
           "w": 220,
+          "itemWidth": 200,
           "text": "菜单",
           "defaultOpen": false,
           "items": [

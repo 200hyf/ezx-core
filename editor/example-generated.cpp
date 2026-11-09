@@ -228,19 +228,19 @@ namespace ui {
             if (in.clicked() && !pctRect(vp, 0.0469, 0.0833, 0.1719, 0.2556).contains(m)) g_p1_menu_1_open = false;
             if (g_p1_menu_1_open)
             {
-                if (in.clicked() && pctRect(vp, 0.0469, 0.1556, 0.1719, 0.0611).contains(m))
+                if (in.clicked() && pctRect(vp, 0.0469, 0.1556, 0.1563, 0.0611).contains(m))
                 {
                     onMenu_SETTINGS_MENU_MAIN_Item1();
                     g_p1_menu_1_open = false;
                     return;
                 }
-                if (in.clicked() && pctRect(vp, 0.0469, 0.2167, 0.1719, 0.0611).contains(m))
+                if (in.clicked() && pctRect(vp, 0.0469, 0.2167, 0.1563, 0.0611).contains(m))
                 {
                     onMenu_SETTINGS_MENU_MAIN_Item2();
                     g_p1_menu_1_open = false;
                     return;
                 }
-                if (in.clicked() && pctRect(vp, 0.0469, 0.2778, 0.1719, 0.0611).contains(m))
+                if (in.clicked() && pctRect(vp, 0.0469, 0.2778, 0.1563, 0.0611).contains(m))
                 {
                     onMenu_SETTINGS_MENU_MAIN_Item3();
                     g_p1_menu_1_open = false;
@@ -335,17 +335,17 @@ namespace ui {
         }
             if (g_p1_menu_1_open)
             {
-                const Rect r0 = pctRect(vp, 0.0469, 0.1556, 0.1719, 0.0611);
+                const Rect r0 = pctRect(vp, 0.0469, 0.1556, 0.1563, 0.0611);
                 const bool h0 = r0.contains(m);
                 fillRound(r0, 8, h0 ? RGB(42, 58, 86) : RGB(26, 32, 48));
                 frameRound(r0, 8, 2, RGB(92, 124, 196));
                 vp.textIn(r0.inset(14), "回到主页", 24, RGB(238, 242, 255), Align::Left);
-                const Rect r1 = pctRect(vp, 0.0469, 0.2167, 0.1719, 0.0611);
+                const Rect r1 = pctRect(vp, 0.0469, 0.2167, 0.1563, 0.0611);
                 const bool h1 = r1.contains(m);
                 fillRound(r1, 8, h1 ? RGB(42, 58, 86) : RGB(35, 48, 74));
                 frameRound(r1, 8, 2, RGB(92, 124, 196));
                 vp.textIn(r1.inset(14), "音量", 24, RGB(255, 212, 121), Align::Left);
-                const Rect r2 = pctRect(vp, 0.0469, 0.2778, 0.1719, 0.0611);
+                const Rect r2 = pctRect(vp, 0.0469, 0.2778, 0.1563, 0.0611);
                 const bool h2 = r2.contains(m);
                 fillRound(r2, 8, h2 ? RGB(42, 58, 86) : RGB(26, 32, 48));
                 frameRound(r2, 8, 2, RGB(92, 124, 196));

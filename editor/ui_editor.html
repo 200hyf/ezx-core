@@ -470,6 +470,7 @@ function defaults(type) {
   });
   if (type === 'menu') return Object.assign(base, {
     w: 280, h: 200, text: '菜单', fontSize: 26,
+    itemWidth: 0,
     headerHeight: 52, itemHeight: 44,
     itemFontSize: 24,
     items: [
@@ -543,6 +544,7 @@ function normalizeWidgets(list) {
       });
       w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
       w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
+      w.itemWidth = clamp(Math.round(num(w.itemWidth, 0)), 0, 1600);
       w.expandDir = ['down', 'up', 'left', 'right', 'fan'].includes(w.expandDir) ? w.expandDir : 'down';
       w.trigger = w.trigger === 'hover' ? 'hover' : 'click';
       w.closeOnSelect = w.closeOnSelect !== false;
@@ -618,7 +620,7 @@ function sampleProject() {
       {
         key: 'p2', id: 'SETTINGS', name: '设置页',
         widgets: [
-          { type: 'menu', id: 'MENU_MAIN', x: 60, y: 60, w: 220, text: '菜单', defaultOpen: false, items: [
+          { type: 'menu', id: 'MENU_MAIN', x: 60, y: 60, w: 220, itemWidth: 200, text: '菜单', defaultOpen: false, items: [
             { text: '回到主页', target: 'p1' },
             { text: '音量', itemBg: '#23304a', textColor: '#ffd479' },
             { text: '关于' }
@@ -1061,12 +1063,12 @@ function renderStage() {
         item.className = 'menu-item';
         item.dataset.menuPart = 'item';
         item.dataset.index = i;
+        item.style.width = menuItemWidth(w) + 'px';
         if (!vertical) {
           const pos = menuItemPos(w, i);
           item.style.position = 'absolute';
           item.style.left = (pos.x - w.x) + 'px';
           item.style.top = (pos.y - w.y) + 'px';
-          item.style.width = w.w + 'px';
         }
         item.style.height = (w.itemHeight || 44) + 'px';
         item.style.background = it.itemBg || w.itemBg || '#1a2030';
@@ -1350,7 +1352,7 @@ function renderProps() {
   html += `<div class="row2">
       ${numberField('X', 'x', w.x)}
       ${numberField('Y', 'y', w.y)}
-      ${numberField('宽', 'w', w.w, 8)}
+      ${w.type === 'menu' ? numberField('主按钮宽', 'w', w.w, 8) : numberField('宽', 'w', w.w, 8)}
       ${w.type === 'menu'
         ? `<div class="field"><label>高（自动）</label><input type="number" value="${w.h}" disabled></div>`
         : numberField('高', 'h', w.h, 8)}
@@ -1452,6 +1454,8 @@ function renderProps() {
     html += inputField('标题', 'text', w.text);
     html += numberField('标题字号', 'fontSize', w.fontSize, 8, 200);
     html += numberField('菜单项字号', 'itemFontSize', w.itemFontSize, 8, 200);
+    html += numberField('子按钮宽（0=跟随主按钮）', 'itemWidth', w.itemWidth, 0, 1600);
+    html += `<div class="hint">主按钮宽 = 上面的「主按钮宽」；子按钮宽单独设置后，菜单项可以比主按钮更宽或更窄。</div>`;
     html += `<div class="row2">
       ${numberField('按钮高度', 'headerHeight', w.headerHeight, 24, 200)}
       ${numberField('菜单项高度', 'itemHeight', w.itemHeight, 20, 160)}
@@ -1510,6 +1514,8 @@ function renderProps() {
       <button class="btn danger" data-action="del">删除</button>
     </div>`;
   box.innerHTML = html;
+  box.querySelectorAll('[data-prop],[data-item-prop],[data-action],[data-item-action],[data-file]')
+    .forEach(el => { el.dataset.wuid = w.uid; });
 }
 
 /* ------------------------------- 拖拽/缩放 ------------------------------- */
@@ -1643,6 +1649,7 @@ function syncMenuHeight(w) {
   }));
   w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
   w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
+  w.itemWidth = clamp(Math.round(num(w.itemWidth, 0)), 0, 1600);
   w.expandDir = ['down', 'up', 'left', 'right', 'fan'].includes(w.expandDir) ? w.expandDir : 'down';
   w.trigger = w.trigger === 'hover' ? 'hover' : 'click';
   w.closeOnSelect = w.closeOnSelect !== false;
@@ -1658,23 +1665,28 @@ function menuHeaderPos(w) {
   return { x: w.x, y, w: w.w, h: w.headerHeight };
 }
 
+function menuItemWidth(w) {
+  return w.itemWidth > 0 ? w.itemWidth : w.w;
+}
+
 function menuItemPos(w, i) {
   const n = (w.items || []).length;
-  if (w.expandDir === 'right') return { x: w.x + w.w, y: w.y + i * w.itemHeight, w: w.w, h: w.itemHeight };
-  if (w.expandDir === 'left') return { x: w.x - w.w, y: w.y + i * w.itemHeight, w: w.w, h: w.itemHeight };
+  const iw = menuItemWidth(w);
+  if (w.expandDir === 'right') return { x: w.x + w.w, y: w.y + i * w.itemHeight, w: iw, h: w.itemHeight };
+  if (w.expandDir === 'left') return { x: w.x - iw, y: w.y + i * w.itemHeight, w: iw, h: w.itemHeight };
   if (w.expandDir === 'fan') {
     const t = n <= 1 ? 0.5 : i / (n - 1);
     const a = (w.fanStart + (w.fanEnd - w.fanStart) * t) * Math.PI / 180;
     const cx = w.x + w.w / 2;
     const cy = w.y + w.headerHeight / 2;
     return {
-      x: cx + Math.cos(a) * w.fanRadius - w.w / 2,
+      x: cx + Math.cos(a) * w.fanRadius - iw / 2,
       y: cy + Math.sin(a) * w.fanRadius - w.itemHeight / 2,
-      w: w.w, h: w.itemHeight
+      w: iw, h: w.itemHeight
     };
   }
   const y = w.expandDir === 'up' ? w.y + i * w.itemHeight : w.y + w.headerHeight + i * w.itemHeight;
-  return { x: w.x, y, w: w.w, h: w.itemHeight };
+  return { x: w.x, y, w: iw, h: w.itemHeight };
 }
 
 function menuBounds(w) {
@@ -1721,7 +1733,7 @@ function applyCentering(w) {
 }
 
 function setWidgetProp(w, prop, value) {
-  if (['x','y','w','h','fontSize','itemFontSize','headerHeight','itemHeight','fanRadius','fanStart','fanEnd','maxLen','borderWidth','radius'].includes(prop)) {
+  if (['x','y','w','h','fontSize','itemFontSize','itemWidth','headerHeight','itemHeight','fanRadius','fanStart','fanEnd','maxLen','borderWidth','radius'].includes(prop)) {
     value = Math.round(num(value));
     if (prop === 'w' || prop === 'h') value = Math.max(8, value);
     if (prop === 'maxLen') value = clamp(value, 0, 500);
@@ -1735,7 +1747,8 @@ function setWidgetProp(w, prop, value) {
   w[prop] = value;
 }
 function applyMenuItemInput(el) {
-  const w = selected();
+  const ownerUid = el.dataset.wuid;
+  const w = ownerUid ? project.widgets.find(x => x.uid === ownerUid) : selected();
   if (!w || w.type !== 'menu') return;
   const idx = Number(el.dataset.index);
   const it = w.items[idx];
@@ -1759,7 +1772,8 @@ function onPropInput(e) {
   if (!el) return;
   const prop = el.dataset.prop;
   let value = el.type === 'checkbox' ? el.checked : el.value;
-  const w = selected();
+  const ownerUid = el.dataset.wuid;
+  const w = ownerUid ? project.widgets.find(x => x.uid === ownerUid) : selected();
   historyPush();
   if (!w) {
     if (['name','designW','designH','bg','bgImage','bgFit','grid','layout','guideCols','guideRows','showGuides','snapGuides','pageName','pageId'].includes(prop)) {
@@ -1819,7 +1833,7 @@ function onPropInput(e) {
     return;
   }
   setWidgetProp(w, prop, value);
-  if (w.type === 'menu' && ['headerHeight', 'itemHeight', 'expandDir', 'fanRadius', 'fanStart', 'fanEnd'].includes(prop)) {
+  if (w.type === 'menu' && ['headerHeight', 'itemHeight', 'itemWidth', 'expandDir', 'fanRadius', 'fanStart', 'fanEnd'].includes(prop)) {
     syncMenuHeight(w);
     fitMenuToStage(w);
     if (prop === 'expandDir') renderProps();
@@ -2637,7 +2651,8 @@ function init() {
       if (fileKind === 'bg') {
         r.onload = () => { project.bgPreviewData = r.result; renderStage(); };
       } else {
-        const w = selected();
+        const ownerUid = e.target.dataset.wuid;
+        const w = ownerUid ? project.widgets.find(x => x.uid === ownerUid) : selected();
         if (!w) return;
         r.onload = () => {
           if (fileKind === 'icon') w.iconPreviewData = r.result;
@@ -2831,6 +2846,38 @@ function init() {
     applyCentering(testW);
     ok('自动居中', testW.x === Math.round((project.designW - testW.w) / 2) &&
       testW.y === Math.round((project.designH - testW.h) / 2));
+
+    const btnA = project.widgets.find(w => w.type === 'button' && w.id === 'BTN_START');
+    const btnB = project.widgets.find(w => w.type === 'button' && w.id === 'BTN_SETTINGS');
+    if (btnA && btnB) {
+      select(btnA.uid);
+      const pa = document.querySelector('#props [data-prop="text"]');
+      ok('属性绑定到 A', !!pa && pa.dataset.wuid === btnA.uid);
+      const oldText = btnA.text;
+      pa.value = '__A__';
+      pa.dispatchEvent(new Event('input', { bubbles: true }));
+      ok('只更新 A 的文字', btnA.text === '__A__' && btnB.text !== '__A__');
+      select(btnB.uid);
+      const pb = document.querySelector('#props [data-prop="text"]');
+      ok('切换后绑定到 B', !!pb && pb.dataset.wuid === btnB.uid);
+      btnA.text = oldText;
+    } else {
+      ok('属性绑定到 A', false);
+      ok('只更新 A 的文字', false);
+      ok('切换后绑定到 B', false);
+    }
+
+    const menuWTest = project.pages[1] && project.pages[1].widgets.find(w => w.type === 'menu');
+    if (menuWTest) {
+      const oldWidth = menuWTest.itemWidth;
+      menuWTest.itemWidth = 180;
+      syncMenuHeight(menuWTest);
+      ok('菜单子按钮单独宽度', menuItemPos(menuWTest, 0).w === 180);
+      menuWTest.itemWidth = oldWidth;
+      syncMenuHeight(menuWTest);
+    } else {
+      ok('菜单子按钮单独宽度', false);
+    }
 
     const bgw = project.widgets.find(w => w.type === 'panel') || project.widgets.find(w => w.type === 'button');
     if (bgw) {
