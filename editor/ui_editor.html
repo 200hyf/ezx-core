@@ -482,6 +482,7 @@ function defaults(type) {
     trigger: 'click',
     closeOnSelect: true,
     closeOnOutside: true,
+    fanRadius: 180, fanStart: 200, fanEnd: 340,
     headerBg: '#222a3e', headerHoverBg: '#3e5684',
     itemBg: '#1a2030', itemHoverBg: '#2a3a56',
     textColor: '#eef2ff', borderColor: '#5c7cc4',
@@ -542,11 +543,14 @@ function normalizeWidgets(list) {
       });
       w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
       w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
-      w.expandDir = w.expandDir === 'up' ? 'up' : 'down';
+      w.expandDir = ['down', 'up', 'left', 'right', 'fan'].includes(w.expandDir) ? w.expandDir : 'down';
       w.trigger = w.trigger === 'hover' ? 'hover' : 'click';
       w.closeOnSelect = w.closeOnSelect !== false;
       w.closeOnOutside = w.closeOnOutside !== false;
-      w.h = w.headerHeight + w.items.length * w.itemHeight;
+      w.fanRadius = clamp(Math.round(num(w.fanRadius, 180)), 40, 900);
+      w.fanStart = Math.round(num(w.fanStart, 200));
+      w.fanEnd = Math.round(num(w.fanEnd, 340));
+      w.h = menuHeight(w);
     }
   });
   return arr;
@@ -1013,7 +1017,8 @@ function renderStage() {
     } else if (w.type === 'menu') {
       el.style.background = 'transparent';
       el.style.overflow = 'visible';
-      el.style.display = 'flex';
+      const vertical = w.expandDir === 'down' || w.expandDir === 'up';
+      el.style.display = vertical ? 'flex' : 'block';
       el.style.flexDirection = 'column';
       el.style.justifyContent = w.expandDir === 'up' ? 'flex-end' : 'flex-start';
       const isPreview = document.body.classList.contains('preview');
@@ -1023,6 +1028,12 @@ function renderStage() {
       const header = document.createElement('div');
       header.className = 'menu-header';
       header.dataset.menuPart = 'header';
+      if (!vertical) {
+        header.style.position = 'absolute';
+        header.style.left = '0';
+        header.style.top = '0';
+        header.style.right = '0';
+      }
       header.style.height = (w.headerHeight || 52) + 'px';
       header.style.background = w.headerBg || '#222a3e';
       header.style.border = (w.borderWidth || 0) + 'px solid ' + (w.borderColor || '#5c7cc4');
@@ -1050,6 +1061,13 @@ function renderStage() {
         item.className = 'menu-item';
         item.dataset.menuPart = 'item';
         item.dataset.index = i;
+        if (!vertical) {
+          const pos = menuItemPos(w, i);
+          item.style.position = 'absolute';
+          item.style.left = (pos.x - w.x) + 'px';
+          item.style.top = (pos.y - w.y) + 'px';
+          item.style.width = w.w + 'px';
+        }
         item.style.height = (w.itemHeight || 44) + 'px';
         item.style.background = it.itemBg || w.itemBg || '#1a2030';
         item.style.border = (w.borderWidth || 0) + 'px solid ' + (w.borderColor || '#5c7cc4');
@@ -1440,9 +1458,20 @@ function renderProps() {
     </div>`;
     html += `<div class="field"><label>展开方向</label>
       <select data-prop="expandDir">
-        <option value="down" ${w.expandDir !== 'up' ? 'selected' : ''}>向下展开</option>
+        <option value="down" ${w.expandDir === 'down' ? 'selected' : ''}>向下展开</option>
         <option value="up" ${w.expandDir === 'up' ? 'selected' : ''}>向上展开</option>
+        <option value="left" ${w.expandDir === 'left' ? 'selected' : ''}>向左展开</option>
+        <option value="right" ${w.expandDir === 'right' ? 'selected' : ''}>向右展开</option>
+        <option value="fan" ${w.expandDir === 'fan' ? 'selected' : ''}>扇形展开</option>
       </select></div>`;
+    if (w.expandDir === 'fan') {
+      html += `<div class="row2">
+        ${numberField('扇形半径', 'fanRadius', w.fanRadius, 40, 900)}
+        ${numberField('起始角度', 'fanStart', w.fanStart, -360, 360)}
+      </div>`;
+      html += numberField('结束角度', 'fanEnd', w.fanEnd, -360, 360);
+      html += `<div class="hint">角度按屏幕坐标：0=右，90=下，180=左，270=上；常用 200→340 是上方扇形。</div>`;
+    }
     html += `<div class="field"><label>触发方式</label>
       <select data-prop="trigger">
         <option value="click" ${w.trigger !== 'hover' ? 'selected' : ''}>点击展开/收起</option>
@@ -1614,11 +1643,76 @@ function syncMenuHeight(w) {
   }));
   w.headerHeight = clamp(Math.round(num(w.headerHeight, 52)), 24, 200);
   w.itemHeight = clamp(Math.round(num(w.itemHeight, 44)), 20, 160);
-  w.expandDir = w.expandDir === 'up' ? 'up' : 'down';
+  w.expandDir = ['down', 'up', 'left', 'right', 'fan'].includes(w.expandDir) ? w.expandDir : 'down';
   w.trigger = w.trigger === 'hover' ? 'hover' : 'click';
   w.closeOnSelect = w.closeOnSelect !== false;
   w.closeOnOutside = w.closeOnOutside !== false;
-  w.h = w.headerHeight + w.items.length * w.itemHeight;
+  w.fanRadius = clamp(Math.round(num(w.fanRadius, 180)), 40, 900);
+  w.fanStart = Math.round(num(w.fanStart, 200));
+  w.fanEnd = Math.round(num(w.fanEnd, 340));
+  w.h = menuHeight(w);
+}
+
+function menuHeaderPos(w) {
+  const y = w.expandDir === 'up' ? w.y + (w.items || []).length * w.itemHeight : w.y;
+  return { x: w.x, y, w: w.w, h: w.headerHeight };
+}
+
+function menuItemPos(w, i) {
+  const n = (w.items || []).length;
+  if (w.expandDir === 'right') return { x: w.x + w.w, y: w.y + i * w.itemHeight, w: w.w, h: w.itemHeight };
+  if (w.expandDir === 'left') return { x: w.x - w.w, y: w.y + i * w.itemHeight, w: w.w, h: w.itemHeight };
+  if (w.expandDir === 'fan') {
+    const t = n <= 1 ? 0.5 : i / (n - 1);
+    const a = (w.fanStart + (w.fanEnd - w.fanStart) * t) * Math.PI / 180;
+    const cx = w.x + w.w / 2;
+    const cy = w.y + w.headerHeight / 2;
+    return {
+      x: cx + Math.cos(a) * w.fanRadius - w.w / 2,
+      y: cy + Math.sin(a) * w.fanRadius - w.itemHeight / 2,
+      w: w.w, h: w.itemHeight
+    };
+  }
+  const y = w.expandDir === 'up' ? w.y + i * w.itemHeight : w.y + w.headerHeight + i * w.itemHeight;
+  return { x: w.x, y, w: w.w, h: w.itemHeight };
+}
+
+function menuBounds(w) {
+  const boxes = [menuHeaderPos(w), ...(w.items || []).map((_, i) => menuItemPos(w, i))];
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  boxes.forEach(r => {
+    x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y);
+    x2 = Math.max(x2, r.x + r.w); y2 = Math.max(y2, r.y + r.h);
+  });
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+function fitMenuToStage(w) {
+  if (!w || w.type !== 'menu') return;
+  const b = menuBounds(w);
+  if (b.w <= project.designW) {
+    if (b.x < 0) w.x -= b.x;
+    else if (b.x + b.w > project.designW) w.x -= (b.x + b.w - project.designW);
+  } else {
+    w.x = 0;
+  }
+  if (b.h <= project.designH) {
+    if (b.y < 0) w.y -= b.y;
+    else if (b.y + b.h > project.designH) w.y -= (b.y + b.h - project.designH);
+  } else {
+    w.y = 0;
+  }
+}
+
+function menuHeight(w) {
+  const n = (w.items || []).length;
+  if (w.expandDir === 'down' || w.expandDir === 'up') {
+    return w.headerHeight + n * w.itemHeight;
+  }
+  if (w.expandDir === 'left' || w.expandDir === 'right') {
+    return Math.max(w.headerHeight, n * w.itemHeight);
+  }
+  return w.headerHeight;
 }
 
 function applyCentering(w) {
@@ -1627,7 +1721,7 @@ function applyCentering(w) {
 }
 
 function setWidgetProp(w, prop, value) {
-  if (['x','y','w','h','fontSize','itemFontSize','headerHeight','itemHeight','maxLen','borderWidth','radius'].includes(prop)) {
+  if (['x','y','w','h','fontSize','itemFontSize','headerHeight','itemHeight','fanRadius','fanStart','fanEnd','maxLen','borderWidth','radius'].includes(prop)) {
     value = Math.round(num(value));
     if (prop === 'w' || prop === 'h') value = Math.max(8, value);
     if (prop === 'maxLen') value = clamp(value, 0, 500);
@@ -1725,8 +1819,10 @@ function onPropInput(e) {
     return;
   }
   setWidgetProp(w, prop, value);
-  if (w.type === 'menu' && (prop === 'headerHeight' || prop === 'itemHeight')) {
+  if (w.type === 'menu' && ['headerHeight', 'itemHeight', 'expandDir', 'fanRadius', 'fanStart', 'fanEnd'].includes(prop)) {
     syncMenuHeight(w);
+    fitMenuToStage(w);
+    if (prop === 'expandDir') renderProps();
   }
   if (prop === 'x') w.centerH = false;
   if (prop === 'y') w.centerV = false;
@@ -1779,6 +1875,12 @@ function generateCode(p) {
   const rectAt = (w, dy, hh) => percent
     ? `pctRect(vp, ${fnum(w.x / W)}, ${fnum((w.y + dy) / H)}, ${fnum(w.w / W)}, ${fnum(hh / H)})`
     : `Rect{ ${w.x}, ${w.y + dy}, ${w.w}, ${hh} }`;
+  const posExpr = p => percent
+    ? `pctRect(vp, ${fnum(p.x / W)}, ${fnum(p.y / H)}, ${fnum(p.w / W)}, ${fnum(p.h / H)})`
+    : `Rect{ ${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.w)}, ${Math.round(p.h)} }`;
+  const menuHeaderExpr = w => posExpr(menuHeaderPos(w));
+  const menuItemExpr = (w, i) => posExpr(menuItemPos(w, i));
+  const menuBoundsExpr = w => posExpr(menuBounds(w));
 
   const usedPageIds = new Set();
   pages.forEach((pg, pi) => {
@@ -2092,9 +2194,8 @@ function generateCode(p) {
     if (clickMenus.length) {
       i8('// 伸缩菜单：展开/收起、菜单项点击');
       clickMenus.forEach(w => {
-        const hdy = w.expandDir === 'up' ? (w.items.length * w.itemHeight) : 0;
-        const headerR = rectAt(w, hdy, w.headerHeight);
-        const fullR = rectExpr(w);
+        const headerR = menuHeaderExpr(w);
+        const fullR = menuBoundsExpr(w);
         i8('if (inArea)');
         i8('{');
         if (w.trigger === 'hover') {
@@ -2114,8 +2215,7 @@ function generateCode(p) {
           i12('{');
           (w.items || []).forEach((item, i) => {
             if (item.enabled === false) return;
-            const idy = w.expandDir === 'up' ? i * w.itemHeight : w.headerHeight + i * w.itemHeight;
-            i12('    if (in.clicked() && ' + rectAt(w, idy, w.itemHeight) + '.contains(m))');
+            i12('    if (in.clicked() && ' + menuItemExpr(w, i) + '.contains(m))');
             i12('    {');
             i12('        ' + w._itemFuncs[i] + '();');
             if (w.closeOnSelect) i12('        ' + w._openVar + ' = false;');
@@ -2194,9 +2294,8 @@ function generateCode(p) {
         const radius = Math.round(num(w.radius, 0));
         const bw = Math.round(num(w.borderWidth, 0));
         i8('// 伸缩菜单：' + String(w.text || w.id || ''));
-        const hdy = w.expandDir === 'up' ? (w.items.length * w.itemHeight) : 0;
         i8('{');
-        i12('const Rect r = ' + rectAt(w, hdy, w.headerHeight) + ';');
+        i12('const Rect r = ' + menuHeaderExpr(w) + ';');
         i12('const bool hover = r.contains(m);');
         i12('fillRound(r, ' + radius + ', hover ? ' + rgbExpr(w.headerHoverBg) + ' : ' + rgbExpr(w.headerBg) + ');');
         if (bw > 0) i12('frameRound(r, ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
@@ -2206,12 +2305,11 @@ function generateCode(p) {
         i12('if (' + w._openVar + ')');
         i12('{');
         (w.items || []).forEach((item, i) => {
-          const idy = w.expandDir === 'up' ? i * w.itemHeight : w.headerHeight + i * w.itemHeight;
           const bg = item.itemBg || w.itemBg;
           const hov = item.enabled === false ? bg : (item.itemHoverBg || w.itemHoverBg || bg);
           const tc = item.enabled === false ? '#6b7280' : (item.textColor || w.textColor);
           const fs = item.fontSize > 0 ? item.fontSize : w.itemFontSize;
-          i12('    const Rect r' + i + ' = ' + rectAt(w, idy, w.itemHeight) + ';');
+          i12('    const Rect r' + i + ' = ' + menuItemExpr(w, i) + ';');
           i12('    const bool h' + i + ' = r' + i + '.contains(m);');
           i12('    fillRound(r' + i + ', ' + radius + ', h' + i + ' ? ' + rgbExpr(hov) + ' : ' + rgbExpr(bg) + ');');
           if (bw > 0) i12('    frameRound(r' + i + ', ' + radius + ', ' + bw + ', ' + rgbExpr(w.borderColor) + ');');
@@ -2375,9 +2473,14 @@ function init() {
     project.guideCols = clamp(Math.round(num(params.get('cols'), 4)), 1, 64);
     project.guideRows = clamp(Math.round(num(params.get('rows'), 3)), 1, 64);
   }
-  if (params.get('menudir') === 'up') {
+  const menudir = params.get('menudir');
+  if (['down', 'up', 'left', 'right', 'fan'].includes(menudir)) {
     const m = project.widgets.find(w => w.type === 'menu') || project.pages[1]?.widgets.find(w => w.type === 'menu');
-    if (m) m.expandDir = 'up';
+    if (m) {
+      m.expandDir = menudir;
+      syncMenuHeight(m);
+      fitMenuToStage(m);
+    }
   }
 
   // 项目名
@@ -2565,6 +2668,7 @@ function init() {
         const t = mw.items[idx + 1]; mw.items[idx + 1] = mw.items[idx]; mw.items[idx] = t;
       }
       syncMenuHeight(mw);
+      fitMenuToStage(mw);
       renderStage();
       renderProps();
       saveLocal();
@@ -2820,6 +2924,15 @@ function init() {
       menuItem.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
       ok('预览菜单项日志', $('#previewLog').textContent.includes('菜单项'));
       ok('预览菜单项跳转', project.activePage === 0);
+      const oldDir = menuW.expandDir;
+      menuW.expandDir = 'fan';
+      syncMenuHeight(menuW);
+      fitMenuToStage(menuW);
+      const fb = menuBounds(menuW);
+      ok('扇形展开在画布内', fb.x >= 0 && fb.y >= 0 &&
+        fb.x + fb.w <= project.designW + 1 && fb.y + fb.h <= project.designH + 1);
+      menuW.expandDir = oldDir;
+      syncMenuHeight(menuW);
     } else {
       ok('预览菜单展开', false);
       ok('预览菜单项日志', false);
