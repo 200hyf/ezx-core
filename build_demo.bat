@@ -14,8 +14,24 @@ if not exist "%VSWHERE%" (
 )
 
 for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+
+rem vswhere 找不到时（例如 VS 装在非默认目录、没注册进 Installer）回退到常见路径
+if not defined VSDIR (
+    for %%p in (
+        "D:\VisualStudio2026"
+        "D:\VisualStudio2022"
+        "C:\Program Files\Microsoft Visual Studio\2022\Community"
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional"
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
+        "C:\Program Files\Microsoft Visual Studio\18\Community"
+    ) do (
+        if not defined VSDIR if exist "%%~p\VC\Auxiliary\Build\vcvars64.bat" set "VSDIR=%%~p"
+    )
+)
+
 if not defined VSDIR (
     echo [ERROR] Visual Studio C++ tools not found.
+    echo         vswhere found nothing; checked D:\VisualStudio2026 and Program Files defaults.
     exit /b 1
 )
 
