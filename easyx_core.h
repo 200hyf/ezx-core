@@ -1,7 +1,7 @@
 // ============================================================================
 //  easyx_core.h  ——  EasyX 界面底座（不含任何按钮外观）
 // ----------------------------------------------------------------------------
-//  提供 7 样东西，按钮长什么样由你自己画：
+//  提供 8 样东西，按钮长什么样由你自己画：
 //    1) Window    窗口操控：建窗、切全屏、拖拽/最大化后自动重建
 //    2) Viewport  分辨率适配：按 1280×720 之类的"设计尺寸"写坐标，自动等比缩放 + 黑边
 //    3) Input     鼠标/键盘：位置、按下、松开、点击、双击、拖拽、滚轮
@@ -9,6 +9,7 @@
 //    5) TextInput 文本输入逻辑：光标、删除、过滤字符、长度限制、数值钳制
 //    6) Page/Pages 页面框架：每个页面自己的 排版/逻辑/绘制 三段函数
 //    7) SpriteSheet / Animation / Sprite  图集切帧、帧动画、精灵移动
+//    8) Scene / Entity / Camera2D         实体容器、AABB 碰撞、相机跟随
 //
 //  用法：把 easyx_core.h + easyx_core.cpp 加进工程，#include "easyx_core.h"。
 //  详见 README.md 和 使用说明.md。
@@ -76,6 +77,31 @@ struct Rect
 // 把一块区域横向/纵向等分成 count 份（gap = 每份之间的空隙）
 std::vector<Rect> splitRow(const Rect& area, int count, int gap = 0);
 std::vector<Rect> splitCol(const Rect& area, int count, int gap = 0);
+
+// 浮点矩形：世界坐标（角色位置、碰撞盒）用它，避免每帧取整丢精度
+struct RectF
+{
+    float x = 0.f;
+    float y = 0.f;
+    float w = 0.f;
+    float h = 0.f;
+
+    float right()  const { return x + w; }
+    float bottom() const { return y + h; }
+    float cx()     const { return x + w * 0.5f; }
+    float cy()     const { return y + h * 0.5f; }
+
+    bool empty() const { return w <= 0.f || h <= 0.f; }
+    bool contains(float px, float py) const { return px >= x && px < x + w && py >= y && py < y + h; }
+
+    Rect toRect() const    // 画到屏幕前才取整
+    {
+        return Rect{ (int)(x + 0.5f), (int)(y + 0.5f), (int)(w + 0.5f), (int)(h + 0.5f) };
+    }
+};
+
+// 两个矩形是否相交（碰撞检测的第一步）
+bool overlap(const RectF& a, const RectF& b);
 
 // ===========================================================================
 //  文字
@@ -255,6 +281,85 @@ private:
     float ax_ = 0.5f;
     float ay_ = 1.f;
     int   frame_ = 0;
+};
+
+// ===========================================================================
+//  相机 / 实体 / 场景（v2.2）
+// ---------------------------------------------------------------------------
+//  Camera2D   把"世界坐标"换算成"设计坐标"（视口中心对准相机位置）
+//  Entity     一个游戏对象：精灵 + 世界坐标 + 碰撞盒 + 每帧回调
+//  Scene      实体容器 + 静态碰撞体（地图块），负责 update / 排序 / 绘制
+//  moveAndCollide  轴分离移动：先横向后纵向，撞到实体就贴住
+//
+//  坐标系约定：实体位置 (x, y) = 脚下中心（和 Sprite 默认锚点一致）
+// ===========================================================================
+class Camera2D
+{
+public:
+    void setViewSize(float w, float h);              // 视口大小（一般 = 设计尺寸）
+    void setPosition(float cx, float cy);            // 相机中心的世界坐标
+    void follow(float cx, float cy, float smooth);   // 平滑跟随：smooth 0~1，越大越紧
+
+    // 把相机限制在世界范围内（世界比视口小就居中）
+    void clampToWorld(float worldW, float worldH);
+
+    float x() const { return cx_; }
+    float y() const { return cy_; }
+    float viewW() const { return viewW_; }
+    float viewH() const { return viewH_; }
+
+    RectF toDesign(const RectF& world) const;        // 世界矩形 → 设计矩形
+
+private:
+    float viewW_ = 1280.f;
+    float viewH_ = 720.f;
+    float cx_ = 0.f;
+    float cy_ = 0.f;
+};
+
+class Entity
+{
+public:
+    Sprite sprite;                   // 外观（没加载图也不会崩，只是不画）
+    float  x = 0.f;                  // 世界坐标：脚下中心
+    float  y = 0.f;
+    float  vx = 0.f;                 // 速度（像素/毫秒）
+    float  vy = 0.f;
+    float  w = 32.f;                 // 碰撞盒宽高（脚底中心对齐）
+    float  h = 32.f;
+    bool   active = true;            // false = 下一帧会被 Scene::removeInactive 清掉
+    int    layer = 0;                // 绘制顺序，小的先画
+
+    std::function<void(Entity&, float dtMs)> onUpdate;   // 自定义每帧逻辑（可选）
+
+    RectF box() const;               // 碰撞盒（世界坐标）
+    RectF drawRect() const;          // 绘制矩形（世界坐标，按精灵帧大小 + 缩放）
+
+    void update(float dtMs);
+    void draw(const Viewport& vp, const Camera2D& cam) const;
+};
+
+struct CollideResult
+{
+    bool hitX = false;      // 横向撞墙
+    bool hitY = false;      // 纵向撞到（上顶天花板 / 下落着地）
+    bool grounded = false;  // 站在地面/平台上
+};
+
+// 把实体按 (dx, dy) 移动，途中撞到 solids 就贴住。返回撞到了哪些方向。
+CollideResult moveAndCollide(Entity& e, float dx, float dy, const std::vector<RectF>& solids);
+
+class Scene
+{
+public:
+    // 用 deque：push_back 不会让已经拿到的 Entity& 失效（和 Pages 一个理由）
+    std::deque<Entity> entities;
+    std::vector<RectF> solids;      // 静态碰撞体（地面、平台、墙）
+
+    Entity& add();                   // 加一个实体，返回引用
+    void    update(float dtMs);      // 跑每个实体的逻辑 + 推进动画
+    void    draw(const Viewport& vp, const Camera2D& cam) const;
+    void    removeInactive();        // 清掉 active == false 的
 };
 
 // ===========================================================================

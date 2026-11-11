@@ -568,6 +568,154 @@ void Sprite::draw(const Viewport& vp) const
     vp.image(sheet_.frame(frame_), bounds());
 }
 
+// ===========================================================================
+//  相机 / 实体 / 场景（v2.2）
+// ===========================================================================
+bool overlap(const RectF& a, const RectF& b)
+{
+    return a.x < b.right() && a.right() > b.x &&
+           a.y < b.bottom() && a.bottom() > b.y;
+}
+
+void Camera2D::setViewSize(float w, float h)
+{
+    viewW_ = (w > 0.f) ? w : 1.f;
+    viewH_ = (h > 0.f) ? h : 1.f;
+}
+
+void Camera2D::setPosition(float cx, float cy)
+{
+    cx_ = cx;
+    cy_ = cy;
+}
+
+void Camera2D::follow(float cx, float cy, float smooth)
+{
+    if (smooth <= 0.f) { cx_ = cx; cy_ = cy; return; }
+    if (smooth > 1.f) smooth = 1.f;
+    cx_ += (cx - cx_) * smooth;
+    cy_ += (cy - cy_) * smooth;
+}
+
+void Camera2D::clampToWorld(float worldW, float worldH)
+{
+    const float halfW = viewW_ * 0.5f;
+    const float halfH = viewH_ * 0.5f;
+
+    if (worldW <= viewW_) cx_ = worldW * 0.5f;
+    else
+    {
+        if (cx_ < halfW)          cx_ = halfW;
+        if (cx_ > worldW - halfW) cx_ = worldW - halfW;
+    }
+
+    if (worldH <= viewH_) cy_ = worldH * 0.5f;
+    else
+    {
+        if (cy_ < halfH)          cy_ = halfH;
+        if (cy_ > worldH - halfH) cy_ = worldH - halfH;
+    }
+}
+
+RectF Camera2D::toDesign(const RectF& world) const
+{
+    return RectF{ world.x - (cx_ - viewW_ * 0.5f),
+                  world.y - (cy_ - viewH_ * 0.5f),
+                  world.w, world.h };
+}
+
+RectF Entity::box() const
+{
+    return RectF{ x - w * 0.5f, y - h, w, h };
+}
+
+RectF Entity::drawRect() const
+{
+    const float fw = sprite.sheet().frameW() * sprite.scale();
+    const float fh = sprite.sheet().frameH() * sprite.scale();
+    if (fw <= 0.f || fh <= 0.f) return box();
+    return RectF{ x - fw * 0.5f, y - fh, fw, fh };
+}
+
+void Entity::update(float dtMs)
+{
+    sprite.update(dtMs);
+    if (onUpdate) onUpdate(*this, dtMs);
+}
+
+void Entity::draw(const Viewport& vp, const Camera2D& cam) const
+{
+    if (!sprite.sheet().ok()) return;
+    const Image& img = sprite.sheet().frame(sprite.frame());
+    vp.image(img, cam.toDesign(drawRect()).toRect());
+}
+
+CollideResult moveAndCollide(Entity& e, float dx, float dy, const std::vector<RectF>& solids)
+{
+    CollideResult r;
+
+    // 先横向：撞墙就把实体退到墙边
+    if (dx != 0.f)
+    {
+        e.x += dx;
+        for (const RectF& s : solids)
+        {
+            if (!overlap(e.box(), s)) continue;
+            if (dx > 0.f) e.x = s.x - e.w * 0.5f;
+            else          e.x = s.right() + e.w * 0.5f;
+            r.hitX = true;
+        }
+    }
+
+    // 再纵向：下落着地 / 上顶撞头
+    if (dy != 0.f)
+    {
+        e.y += dy;
+        for (const RectF& s : solids)
+        {
+            if (!overlap(e.box(), s)) continue;
+            if (dy > 0.f) { e.y = s.y;            r.grounded = true; }
+            else          { e.y = s.bottom() + e.h; }
+            r.hitY = true;
+        }
+    }
+
+    return r;
+}
+
+Entity& Scene::add()
+{
+    entities.push_back(Entity{});
+    return entities.back();
+}
+
+void Scene::update(float dtMs)
+{
+    for (Entity& e : entities)
+        if (e.active) e.update(dtMs);
+}
+
+void Scene::draw(const Viewport& vp, const Camera2D& cam) const
+{
+    std::vector<const Entity*> order;
+    order.reserve(entities.size());
+    for (const Entity& e : entities)
+        if (e.active) order.push_back(&e);
+
+    std::stable_sort(order.begin(), order.end(),
+                     [](const Entity* a, const Entity* b) { return a->layer < b->layer; });
+
+    for (const Entity* e : order)
+        e->draw(vp, cam);
+}
+
+void Scene::removeInactive()
+{
+    auto it = std::remove_if(entities.begin(), entities.end(),
+                             [](const Entity& e) { return !e.active; });
+    entities.erase(it, entities.end());
+}
+
 void Image::draw(int x, int y) const
 {
     blit(x, y, w_, h_, Rect{ x, y, w_, h_ });

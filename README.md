@@ -11,6 +11,7 @@
 | `TextInput` | UTF-8 文本编辑、中文、光标、长度/数字/密码 |
 | `Page` / `Pages` | 每页独立的排版/更新/绘制 |
 | `SpriteSheet` / `Animation` / `Sprite` | 图集切帧、帧动画、精灵移动（v2.1） |
+| `Scene` / `Entity` / `Camera2D` | 实体容器、静态碰撞体、轴分离碰撞、相机跟随（v2.2） |
 
 ![主菜单](docs/images/menu.png)
 
@@ -155,6 +156,47 @@ Rect box = hero.bounds();      // 碰撞 / 点击判定用
 
 完整例子：[examples/sprite_demo.cpp](examples/sprite_demo.cpp)（4 帧图集动画 + WASD 走动）。
 
+### Camera2D / Entity / Scene
+
+```cpp
+Scene scene;
+scene.solids = {                        // 静态碰撞体（地面、平台、墙）
+    RectF{ 0, 500, 1920, 40 },
+    RectF{ 420, 410, 180, 20 },
+};
+
+Entity& player = scene.add();
+player.sprite.loadGrid(assetPath("res/hero.png"), 32, 32, 4);
+player.sprite.setScale(1.5f);
+player.w = 28; player.h = 44;           // 碰撞盒
+player.x = 160; player.y = 500;         // 世界坐标：脚下中心
+
+Camera2D cam;
+cam.setViewSize(960, 540);
+cam.follow(player.x, 270, 0.12f);       // 平滑跟随
+cam.clampToWorld(1920, 540);            // 不越出关卡
+
+// 每帧
+player.vx = 0.32f * dir;                // 像素/毫秒
+player.vy += 0.0028f * dtMs;            // 重力
+const CollideResult hit = moveAndCollide(player, player.vx * dtMs, player.vy * dtMs, scene.solids);
+if (hit.hitY) player.vy = 0;
+grounded = hit.grounded;
+scene.update(dtMs);
+scene.draw(vp, cam);                    // 按 layer 排序绘制
+```
+
+| 调用 | 说明 |
+|---|---|
+| `RectF` / `overlap(a,b)` | 浮点矩形 / 相交判断 |
+| `Camera2D::setViewSize/setPosition/follow/clampToWorld` | 视口、相机中心、平滑跟随、限制在世界内 |
+| `Camera2D::toDesign(worldRect)` | 世界矩形 → 设计矩形（画之前换算） |
+| `Scene::add()/solids/update/draw/removeInactive` | 加实体、静态碰撞体、每帧更新、排序绘制、清理 |
+| `Entity::box()/drawRect()/onUpdate` | 碰撞盒 / 绘制矩形 / 自定义每帧逻辑 |
+| `moveAndCollide(e, dx, dy, solids)` | 轴分离移动，返回 `hitX / hitY / grounded` |
+
+完整例子：[examples/platformer_demo.cpp](examples/platformer_demo.cpp)（平台跳跃 + 相机跟随）。
+
 ### TextInput
 
 ```cpp
@@ -231,6 +273,8 @@ struct UiButton
 
 精灵示例：双击 `build_sprite_demo.bat`，生成 `sprite_demo.exe`；自测跑 `sprite_demo.exe --selftest 120`（120 帧后自动退出）。
 
+场景示例：双击 `build_platformer_demo.bat`，生成 `platformer_demo.exe`；自测跑 `platformer_demo.exe --selftest 240`。
+
 命令行（先 `vcvars64.bat`）：
 
 ```bat
@@ -252,7 +296,9 @@ ezx-core/
 ├─ Directory.Build.targets         可选：自动适配工程设置
 ├─ build_demo.bat                  一键编译 demo
 ├─ examples/sprite_demo.cpp        精灵 / 图集 / 动画示例（v2.1）
+├─ examples/platformer_demo.cpp    场景 / 碰撞 / 相机示例（v2.2）
 ├─ build_sprite_demo.bat           一键编译精灵示例
+├─ build_platformer_demo.bat       一键编译场景示例
 ├─ docs/                           教程 / 原理 / FAQ / 编辑器
 ├─ editor/                         可视化 UI 编辑器
 ├─ res/                            演示图片（含 sprite_sheet.png）

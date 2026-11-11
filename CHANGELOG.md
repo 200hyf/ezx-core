@@ -1,5 +1,25 @@
 # 更新日志
 
+## 2.2.0
+
+### 新增（场景 / 碰撞 / 相机）
+
+- `RectF`：浮点矩形（世界坐标用，避免每帧取整丢精度），带 `right/bottom/cx/cy/toRect`；
+- `overlap(a, b)`：两个 `RectF` 是否相交；
+- `Camera2D`：`setViewSize` / `setPosition` / `follow(cx, cy, smooth)` / `clampToWorld` / `toDesign`（世界 → 设计坐标）；
+- `Entity`：精灵 + 世界坐标（脚下中心）+ 速度 + 碰撞盒 + `layer` + `onUpdate` 回调；`box()` / `drawRect()` / `update()` / `draw()`；
+- `Scene`：`entities`（`deque`，拿到的引用不会失效）+ `solids` 静态碰撞体 + `add/update/draw/removeInactive`；
+- `moveAndCollide(e, dx, dy, solids)`：轴分离移动（先横后纵），返回 `hitX / hitY / grounded`。
+
+### 示例
+
+- 新增 `examples/platformer_demo.cpp`：重力、跳跃、平台碰撞、相机横向跟随；
+- 新增 `build_platformer_demo.bat`；自测 `platformer_demo.exe --selftest 240`（脚本化输入跑 240 帧）。
+
+### 兼容性
+
+- 只新增接口，原有 API 行为不变。
+
 ## 2.1.0
 
 ### 新增（精灵与动画）
