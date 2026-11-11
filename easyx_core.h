@@ -1,13 +1,14 @@
-﻿// ============================================================================
+// ============================================================================
 //  easyx_core.h  ——  EasyX 界面底座（不含任何按钮外观）
 // ----------------------------------------------------------------------------
-//  提供 6 样东西，按钮长什么样由你自己画：
+//  提供 7 样东西，按钮长什么样由你自己画：
 //    1) Window    窗口操控：建窗、切全屏、拖拽/最大化后自动重建
 //    2) Viewport  分辨率适配：按 1280×720 之类的"设计尺寸"写坐标，自动等比缩放 + 黑边
 //    3) Input     鼠标/键盘：位置、按下、松开、点击、双击、拖拽、滚轮
 //    4) Image     图片绘制：加载、拉伸、等比、铺满（支持 png 透明）
 //    5) TextInput 文本输入逻辑：光标、删除、过滤字符、长度限制、数值钳制
 //    6) Page/Pages 页面框架：每个页面自己的 排版/逻辑/绘制 三段函数
+//    7) SpriteSheet / Animation / Sprite  图集切帧、帧动画、精灵移动
 //
 //  用法：把 easyx_core.h + easyx_core.cpp 加进工程，#include "easyx_core.h"。
 //  详见 README.md 和 使用说明.md。
@@ -124,14 +125,136 @@ public:
     void drawFit(const Rect& dst) const;
     // 等比缩放，铺满矩形（多出来的部分裁掉）
     void drawCover(const Rect& dst) const;
+    // 从图里 src 这块（像素坐标）缩放画到 dst —— 图集的每一帧就靠它
+    void drawPart(const Rect& src, const Rect& dst) const;
+    // 截一块（像素坐标）作为新图（图集切帧用）
+    Image crop(const Rect& src) const;
 
 private:
     void blit(int dx, int dy, int dw, int dh, const Rect& clip) const;   // 内部：带裁剪的绘制
+    // 内部：把 src 这块源图缩放画到 (dx,dy,dw,dh)，只画 clip 里的部分
+    void blitFrom(const Rect& src, int dx, int dy, int dw, int dh, const Rect& clip) const;
 
     std::shared_ptr<IMAGE> img_;
     int  w_ = 0;
     int  h_ = 0;
     bool alpha_ = false;     // 图里是否有透明像素（有的话要自己混合）
+};
+
+// ===========================================================================
+//  精灵与动画（v2.1）
+// ---------------------------------------------------------------------------
+//  SpriteSheet  一帧一帧的图：一张图集按网格切，或者一帧一个文件
+//  Animation    帧序列播放：帧区间、帧率、循环、播放/停止
+//  Sprite       位置 + 缩放 + 锚点 + 当前帧，负责画到 Viewport 上
+//
+//  典型用法：
+//      SpriteSheet sheet;
+//      sheet.loadGrid(assetPath("res/hero.png"), 32, 32, 4);   // 4 列
+//      Animation walk;
+//      walk.setFrames(0, 3); walk.setFps(10);
+//      Sprite hero; hero.setSheet(sheet); hero.setPosition(320, 400);
+//      // 每帧： hero.update(dtMs); hero.draw(vp);
+// ===========================================================================
+class Viewport;   // 前置声明：Sprite::draw 只用到引用
+
+class SpriteSheet
+{
+public:
+    // 网格图集：每帧 frameW×frameH，cols 列（0 = 按图宽自动算），count 帧（0 = 全切）
+    bool loadGrid(const std::string& path, int frameW, int frameH, int cols = 0, int count = 0);
+
+    // 文件序列：prefix 含目录和前缀（"res/anim_"），first..last，digits 补零位数
+    bool loadSequence(const std::string& prefix, const std::string& suffix,
+                      int first, int last, int digits = 4);
+
+    bool ok() const { return !frames_.empty(); }
+    int  count() const { return (int)frames_.size(); }
+    int  frameW() const { return fw_; }
+    int  frameH() const { return fh_; }
+
+    const Image& frame(int index) const;
+
+private:
+    std::vector<Image> frames_;
+    int fw_ = 0;
+    int fh_ = 0;
+};
+
+class Animation
+{
+public:
+    void setFrames(int first, int last);   // 用图集里的 [first, last] 帧
+    void setFps(float fps);                // 每秒几帧
+    void setLoop(bool loop);               // 播完是否从头再来
+    void play(bool restart = true);        // 开始播（restart = 回到第一帧）
+    void stop();                           // 停在当前帧
+    void reset();                          // 回到第一帧、清空计时
+
+    // 每帧调用：dtMs = 这一帧过了多少毫秒（用 GetTickCount64 算）
+    void update(float dtMs);
+
+    bool  playing() const { return playing_; }
+    bool  finished() const { return finished_; }   // 非循环播完了
+    int   frame() const { return cur_; }
+    int   first() const { return first_; }
+    int   last()  const { return last_; }
+    float fps()   const { return fps_; }
+
+private:
+    int   first_ = 0;
+    int   last_ = 0;
+    int   cur_ = 0;
+    float fps_ = 12.f;
+    float acc_ = 0.f;
+    bool  loop_ = true;
+    bool  playing_ = true;
+    bool  finished_ = false;
+};
+
+class Sprite
+{
+public:
+    void setSheet(const SpriteSheet& sheet);   // 拷贝一份（帧图是共享的，很便宜）
+
+    bool loadGrid(const std::string& path, int frameW, int frameH, int cols = 0, int count = 0);
+    bool loadSequence(const std::string& prefix, const std::string& suffix,
+                      int first, int last, int digits = 4);
+
+    const SpriteSheet& sheet() const { return sheet_; }
+    Animation&         anim()        { return anim_; }
+    const Animation&   anim()  const { return anim_; }
+
+    void setPosition(float x, float y);
+    void move(float dx, float dy);
+
+    void  setScale(float scale);           // 1 = 原始像素大小
+    float scale() const { return scale_; }
+
+    // 锚点：0~1，(0,0)=左上，(0.5,1)=脚底中心（默认）
+    void setAnchor(float ax, float ay);
+
+    void setFrame(int index);              // 不走动画时直接指定显示哪帧
+    int  frame() const { return frame_; }
+
+    void update(float dtMs);               // 推进动画
+    void draw(const Viewport& vp) const;   // 用设计坐标画到屏幕上
+
+    // 当前这一帧在设计坐标里的矩形（碰撞、点击判定用）
+    Rect bounds() const;
+
+    float x() const { return x_; }
+    float y() const { return y_; }
+
+private:
+    SpriteSheet sheet_;
+    Animation   anim_;
+    float x_ = 0.f;
+    float y_ = 0.f;
+    float scale_ = 1.f;
+    float ax_ = 0.5f;
+    float ay_ = 1.f;
+    int   frame_ = 0;
 };
 
 // ===========================================================================
@@ -159,6 +282,7 @@ public:
 
     // ---- 键盘 ----
     bool keyDown(int vk) const;                       // 这一帧有没有按这个键
+    bool keyHeld(int vk) const;                       // 这个键现在是否按着（做移动用）
     const std::vector<int>& keys() const { return keys_; }   // 这一帧按下的虚拟键码
 
     // 这一帧输入的字符（UTF-16，中文/emoji 都在里面）。

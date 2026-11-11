@@ -1,5 +1,26 @@
 # 更新日志
 
+## 2.1.0
+
+### 新增（精灵与动画）
+
+- `Image::drawPart(src, dst)`：按源矩形绘制，图集切帧用；
+- `Image::crop(src)`：截一块作为新图（`SpriteSheet` 内部用它切帧）；
+- `SpriteSheet`：`loadGrid`（一张图集按网格切帧，列数可传 0 自动算）/ `loadSequence`（一帧一个 png）；
+- `Animation`：帧区间、FPS、循环、`play/stop/reset/update`、`finished()`；
+- `Sprite`：位置、缩放、锚点（默认脚底中心）、当前帧、`update/draw/bounds`；
+- `Input::keyHeld(vk)`：键现在是否按着 —— 做 WASD 连续移动用这个（`keyDown` 只是「这一帧刚按下」）。
+
+### 示例与构建
+
+- 新增 `examples/sprite_demo.cpp`：4 帧图集动画 + WASD 移动，支持 `--selftest N` 跑 N 帧自动退出；
+- 新增 `build_sprite_demo.bat`：和 `build_demo.bat` 一样自动找 VS，找不到回退 `D:\VisualStudio2026` 等常见路径；
+- 新增 `res/sprite_sheet.png`：自制 4 帧示例素材（32×32，共 128×32）。
+
+### 兼容性
+
+- 只新增接口，原有 API 行为不变；已有工程不用改代码。
+
 ## 2.0.0
 
 ### 结构

@@ -7,9 +7,10 @@
 | `Window` | 建窗、全屏/工作区切换、拖拽缩放后自动重建、动态限帧 |
 | `Viewport` | 1280×720 设计坐标 → 窗口坐标，等比缩放 + 黑边/裁边 |
 | `Input` | 鼠标、键盘、点击/双击/拖拽/滚轮、中文输入法定位 |
-| `Image` | png 加载、拉伸/等比/铺满、alpha 透明 |
+| `Image` | png 加载、拉伸/等比/铺满、alpha 透明、按源矩形绘制（图集） |
 | `TextInput` | UTF-8 文本编辑、中文、光标、长度/数字/密码 |
 | `Page` / `Pages` | 每页独立的排版/更新/绘制 |
+| `SpriteSheet` / `Animation` / `Sprite` | 图集切帧、帧动画、精灵移动（v2.1） |
 
 ![主菜单](docs/images/menu.png)
 
@@ -118,6 +119,42 @@ img.drawFit(Rect{ 40, 40, 200, 200 }); // 等比放入
 
 `assetPath` 不依赖当前工作目录；发布时把 `res` 放在 exe 旁边。
 
+### SpriteSheet / Animation / Sprite
+
+```cpp
+SpriteSheet sheet;
+sheet.loadGrid(assetPath("res/hero.png"), 32, 32, 4);   // 32×32 一帧，4 列
+// 或者一帧一个文件：sheet.loadSequence(assetPath("res/walk_"), ".png", 1, 4, 4);
+
+Animation walk;
+walk.setFrames(0, sheet.count() - 1);
+walk.setFps(10);
+walk.setLoop(true);
+
+Sprite hero;
+hero.setSheet(sheet);
+hero.setPosition(480, 430);
+hero.setScale(2);              // 放大 2 倍
+hero.setAnchor(0.5f, 1.0f);    // 锚点 = 脚底中心（默认也是这个）
+
+// 每帧
+hero.update(dtMs);             // 推进动画
+hero.draw(vp);                 // 用设计坐标画
+Rect box = hero.bounds();      // 碰撞 / 点击判定用
+```
+
+| 调用 | 说明 |
+|---|---|
+| `SpriteSheet::loadGrid(path, fw, fh, cols=0, count=0)` | 一张图集按网格切帧；`cols=0` 自动按图宽算，`count=0` 全切 |
+| `SpriteSheet::loadSequence(prefix, suffix, first, last, digits=4)` | 一帧一个文件，帧号补零（`walk_0001.png`） |
+| `Animation::setFrames` / `setFps` / `setLoop` | 帧区间、帧率、是否循环 |
+| `Animation::play/stop/reset` | 播放控制；非循环播完 `finished()` 为 true |
+| `Sprite::setPosition/move/setScale/setAnchor` | 位置、位移、缩放、锚点（0~1） |
+| `Sprite::update(dtMs)` / `draw(vp)` / `bounds()` | 推帧、绘制、取当前帧矩形 |
+| `Input::keyHeld(vk)` | 键现在是否按着（WASD 移动用；`keyDown` 只是「这一帧刚按下」） |
+
+完整例子：[examples/sprite_demo.cpp](examples/sprite_demo.cpp)（4 帧图集动画 + WASD 走动）。
+
 ### TextInput
 
 ```cpp
@@ -192,6 +229,8 @@ struct UiButton
 
 最简单：双击 `build_demo.bat`，自动找 VS + EasyX，用 `/MT /utf-8` 编译。
 
+精灵示例：双击 `build_sprite_demo.bat`，生成 `sprite_demo.exe`；自测跑 `sprite_demo.exe --selftest 120`（120 帧后自动退出）。
+
 命令行（先 `vcvars64.bat`）：
 
 ```bat
@@ -211,10 +250,12 @@ ezx-core/
 ├─ easyx_core.h / easyx_core.cpp   库本体（两个文件）
 ├─ demo_main.cpp                   5 页演示
 ├─ Directory.Build.targets         可选：自动适配工程设置
-├─ build_demo.bat                  一键编译
+├─ build_demo.bat                  一键编译 demo
+├─ examples/sprite_demo.cpp        精灵 / 图集 / 动画示例（v2.1）
+├─ build_sprite_demo.bat           一键编译精灵示例
 ├─ docs/                           教程 / 原理 / FAQ / 编辑器
 ├─ editor/                         可视化 UI 编辑器
-├─ res/                            演示图片
+├─ res/                            演示图片（含 sprite_sheet.png）
 └─ docs/images/                    文档截图
 ```
 

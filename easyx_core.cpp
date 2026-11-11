@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 //  easyx_core.cpp  ——  easyx_core.h 的实现
 //  建议对照 使用说明.md 看：那里讲了每个模块"为什么这么写"。
 // ============================================================================
@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <thread>
 
 #include <imm.h>      // ImmGetContext / ImmSetCompositionWindow（中文输入法定位）
@@ -275,11 +276,12 @@ bool Image::load(const std::string& path, int w, int h)
     return true;
 }
 
-// 把图缩放到 (dx,dy,dw,dh) 画出来，并且只画 clip 里面的部分。
+// 把源图的 src 区域缩放到 (dx,dy,dw,dh) 画出来，只画 clip 里面的部分。
 // EasyX 的 putimage 不认 alpha（透明处会变成黑色），所以带透明的图自己混合。
-void Image::blit(int dx, int dy, int dw, int dh, const Rect& clip) const
+void Image::blitFrom(const Rect& src, int dx, int dy, int dw, int dh, const Rect& clip) const
 {
     if (!img_ || dw <= 0 || dh <= 0) return;
+    if (src.w <= 0 || src.h <= 0) return;
 
     // 目标矩形和裁剪矩形求交集
     const int x0 = (dx > clip.x) ? dx : clip.x;
@@ -292,35 +294,35 @@ void Image::blit(int dx, int dy, int dw, int dh, const Rect& clip) const
     {
         if (x0 == dx && y0 == dy && x1 == dx + dw && y1 == dy + dh)
         {
-            ::putimage(dx, dy, dw, dh, img_.get(), 0, 0);
+            ::putimage(dx, dy, dw, dh, img_.get(), src.x, src.y);
             return;
         }
         HRGN rgn = ::CreateRectRgn(x0, y0, x1, y1);
         ::setcliprgn(rgn);
-        ::putimage(dx, dy, dw, dh, img_.get(), 0, 0);
+        ::putimage(dx, dy, dw, dh, img_.get(), src.x, src.y);
         ::clearcliprgn();
         ::DeleteObject(rgn);
         return;
     }
 
-    DWORD* src = ::GetImageBuffer(img_.get());
+    DWORD* srcBuf = ::GetImageBuffer(img_.get());
     DWORD* dst = ::GetImageBuffer();
-    if (!src || !dst)
+    if (!srcBuf || !dst)
     {
-        ::putimage(dx, dy, dw, dh, img_.get(), 0, 0);
+        ::putimage(dx, dy, dw, dh, img_.get(), src.x, src.y);
         return;
     }
 
     const int devW = ::getwidth();
     const int devH = ::getheight();
-    const int sw = w_;
-    const int sh = h_;
+    const int sw = src.w;
+    const int sh = src.h;
 
     for (int py = y0; py < y1; ++py)
     {
         if (py < 0 || py >= devH) continue;
-        const int sy = (py - dy) * sh / dh;                 // 目标行 → 源图行（最近邻）
-        const DWORD* srow = src + (size_t)sy * sw;
+        const int sy = src.y + (py - dy) * sh / dh;         // 目标行 → 源图行（最近邻）
+        const DWORD* srow = srcBuf + (size_t)sy * w_ + src.x;
         DWORD* drow = dst + (size_t)py * devW;
 
         for (int px = x0; px < x1; ++px)
@@ -341,6 +343,229 @@ void Image::blit(int dx, int dy, int dw, int dh, const Rect& clip) const
             drow[px] = 0xFF000000u | (r << 16) | (g << 8) | b;
         }
     }
+}
+
+void Image::blit(int dx, int dy, int dw, int dh, const Rect& clip) const
+{
+    blitFrom(Rect{ 0, 0, w_, h_ }, dx, dy, dw, dh, clip);
+}
+
+void Image::drawPart(const Rect& src, const Rect& dst) const
+{
+    blitFrom(src, dst.x, dst.y, dst.w, dst.h, dst);
+}
+
+Image Image::crop(const Rect& src) const
+{
+    Image out;
+    if (!img_) return out;
+
+    Rect s = src;
+    if (s.x < 0) { s.w += s.x; s.x = 0; }
+    if (s.y < 0) { s.h += s.y; s.y = 0; }
+    if (s.x + s.w > w_) s.w = w_ - s.x;
+    if (s.y + s.h > h_) s.h = h_ - s.y;
+    if (s.w <= 0 || s.h <= 0) return out;
+
+    auto tmp = std::make_shared<IMAGE>(s.w, s.h);
+    const DWORD* srcBuf = ::GetImageBuffer(img_.get());
+    DWORD* dstBuf = ::GetImageBuffer(tmp.get());
+    if (!srcBuf || !dstBuf) return out;
+
+    for (int y = 0; y < s.h; ++y)
+        std::memcpy(dstBuf + (size_t)y * s.w,
+                    srcBuf + (size_t)(s.y + y) * w_ + s.x,
+                    (size_t)s.w * sizeof(DWORD));
+
+    out.img_ = tmp;
+    out.w_ = s.w;
+    out.h_ = s.h;
+    out.alpha_ = alpha_;
+    return out;
+}
+
+// ===========================================================================
+//  精灵与动画（v2.1）
+// ===========================================================================
+bool SpriteSheet::loadGrid(const std::string& path, int frameW, int frameH, int cols, int count)
+{
+    frames_.clear();
+    fw_ = fh_ = 0;
+    if (frameW <= 0 || frameH <= 0) return false;
+
+    Image sheet;
+    if (!sheet.load(path)) return false;
+
+    int useCols = cols;
+    if (useCols <= 0) useCols = sheet.width() / frameW;      // 不传列数就按图宽自动算
+    if (useCols <= 0) return false;
+    const int rows = sheet.height() / frameH;
+    if (rows <= 0) return false;
+
+    int total = useCols * rows;
+    if (count > 0 && count < total) total = count;           // 只要前 count 帧
+
+    frames_.reserve((size_t)total);
+    for (int i = 0; i < total; ++i)
+    {
+        const int cx = i % useCols;
+        const int cy = i / useCols;
+        frames_.push_back(sheet.crop(Rect{ cx * frameW, cy * frameH, frameW, frameH }));
+    }
+
+    if (frames_.empty()) return false;
+    fw_ = frameW;
+    fh_ = frameH;
+    return true;
+}
+
+bool SpriteSheet::loadSequence(const std::string& prefix, const std::string& suffix,
+                               int first, int last, int digits)
+{
+    frames_.clear();
+    fw_ = fh_ = 0;
+    if (first < 0 || last < first) return false;
+
+    for (int i = first; i <= last; ++i)
+    {
+        // 帧号补零：digits = 4 → "0001"
+        std::string num = std::to_string(i);
+        while ((int)num.size() < digits) num.insert(num.begin(), '0');
+
+        Image img;
+        if (!img.load(prefix + num + suffix)) continue;
+        if (frames_.empty()) { fw_ = img.width(); fh_ = img.height(); }
+        frames_.push_back(img);
+    }
+    return !frames_.empty();
+}
+
+const Image& SpriteSheet::frame(int index) const
+{
+    static const Image empty;
+    if (frames_.empty()) return empty;
+    if (index < 0) index = 0;
+    if (index >= (int)frames_.size()) index = (int)frames_.size() - 1;
+    return frames_[(size_t)index];
+}
+
+void Animation::setFrames(int first, int last)
+{
+    if (first < 0) first = 0;
+    if (last < first) last = first;
+    first_ = first;
+    last_ = last;
+    cur_ = first;
+    acc_ = 0.f;
+    finished_ = false;
+}
+
+void Animation::setFps(float fps)
+{
+    fps_ = (fps > 0.f) ? fps : 1.f;
+}
+
+void Animation::setLoop(bool loop) { loop_ = loop; }
+
+void Animation::play(bool restart)
+{
+    playing_ = true;
+    finished_ = false;
+    if (restart)
+    {
+        cur_ = first_;
+        acc_ = 0.f;
+    }
+}
+
+void Animation::stop() { playing_ = false; }
+
+void Animation::reset()
+{
+    cur_ = first_;
+    acc_ = 0.f;
+    finished_ = false;
+}
+
+void Animation::update(float dtMs)
+{
+    if (!playing_ || last_ <= first_) return;
+
+    acc_ += dtMs;
+    const float frameMs = 1000.f / fps_;
+    if (frameMs <= 0.f) return;
+
+    while (acc_ >= frameMs)
+    {
+        acc_ -= frameMs;
+        ++cur_;
+        if (cur_ > last_)
+        {
+            if (loop_)
+            {
+                cur_ = first_;
+            }
+            else
+            {
+                cur_ = last_;
+                playing_ = false;
+                finished_ = true;
+                acc_ = 0.f;
+                break;
+            }
+        }
+    }
+}
+
+void Sprite::setSheet(const SpriteSheet& sheet)
+{
+    sheet_ = sheet;
+    anim_.setFrames(0, sheet_.count() > 0 ? sheet_.count() - 1 : 0);
+    frame_ = 0;
+}
+
+bool Sprite::loadGrid(const std::string& path, int frameW, int frameH, int cols, int count)
+{
+    if (!sheet_.loadGrid(path, frameW, frameH, cols, count)) return false;
+    anim_.setFrames(0, sheet_.count() - 1);
+    frame_ = 0;
+    return true;
+}
+
+bool Sprite::loadSequence(const std::string& prefix, const std::string& suffix,
+                          int first, int last, int digits)
+{
+    if (!sheet_.loadSequence(prefix, suffix, first, last, digits)) return false;
+    anim_.setFrames(0, sheet_.count() - 1);
+    frame_ = 0;
+    return true;
+}
+
+void Sprite::setPosition(float x, float y) { x_ = x; y_ = y; }
+void Sprite::move(float dx, float dy)      { x_ += dx; y_ += dy; }
+void Sprite::setScale(float scale)         { scale_ = (scale > 0.f) ? scale : 1.f; }
+void Sprite::setAnchor(float ax, float ay) { ax_ = ax; ay_ = ay; }
+void Sprite::setFrame(int index)           { frame_ = index; }
+
+void Sprite::update(float dtMs)
+{
+    anim_.update(dtMs);
+    frame_ = anim_.frame();
+}
+
+Rect Sprite::bounds() const
+{
+    const int w = (int)(sheet_.frameW() * scale_);
+    const int h = (int)(sheet_.frameH() * scale_);
+    const int x = (int)(x_ - w * ax_);
+    const int y = (int)(y_ - h * ay_);
+    return Rect{ x, y, w, h };
+}
+
+void Sprite::draw(const Viewport& vp) const
+{
+    if (!sheet_.ok()) return;
+    vp.image(sheet_.frame(frame_), bounds());
 }
 
 void Image::draw(int x, int y) const
@@ -570,6 +795,13 @@ void Input::applyImePosition() const
 bool Input::keyDown(int vk) const
 {
     return std::find(keys_.begin(), keys_.end(), vk) != keys_.end();
+}
+
+// 键现在是否按着：直接问系统（不是"这一帧刚按下"）。
+// 做 WASD 这种连续移动用这个，别用 keyDown。
+bool Input::keyHeld(int vk) const
+{
+    return (::GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
 #ifndef IDC_HAND
